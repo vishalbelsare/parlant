@@ -139,6 +139,22 @@ class RelationalResolver:
     """
 
     MAX_ITERATIONS = 3
+    """Maximum number of resolution loop iterations.
+
+    Each iteration runs dependencies → prioritization → numerical priority →
+    entailment. Multiple iterations are needed because these steps interact:
+    for example, priority filtering may remove a guideline that was a
+    dependency target, requiring another dependency pass to cascade the
+    removal.
+
+    The dependency step itself is single-pass (topological sort), so
+    iterations are only needed for cross-step interactions. In practice,
+    2 iterations suffice for most cases; 3 provides a safety margin for
+    deeper interaction chains (e.g. priority removes a target, which
+    breaks a dependency, which causes entailment to drop a guideline).
+    If the resolver doesn't converge within this limit, it logs a warning
+    and returns the current state.
+    """
 
     def __init__(
         self,
