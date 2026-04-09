@@ -41,6 +41,8 @@
 
 &nbsp;
 
+> **Looking for an open-source alternative to Ada, Decagon, and Sierra?**
+
 **Parlant streamlines conversational context engineering for enterprise-grade B2C (business to consumer) and sensitive B2B interactions that need to be consistent, compliant, and on-brand.**
 
 ## Why Parlant?
@@ -56,6 +58,22 @@ Conversational context engineering is hard because real-world interactions are d
 Parlant solves this with [context engineering](https://www.gartner.com/en/articles/context-engineering): getting the right context, no more and no less, into the prompt at the right time. You define your rules, knowledge, and tools once; the engine narrows the context in real-time to what's immediately relevant to the current turn.
 
 <img alt="Parlant Demo" src="https://github.com/emcie-co/parlant/blob/develop/docs/demo.gif?raw=true" width="100%" />
+
+## Design goals
+
+Parlant is built around three goals that shape every decision in the framework:
+
+### 1. Maximum control over each customer's experience
+
+Real-world customer interactions are full of nuance — tone, timing, edge cases, regulatory constraints, brand voice. Parlant strives to make every aspect of how the agent speaks and behaves shapeable with precision, rather than left to a language model's biases. The further customization can be pushed, the closer the agent gets to representing your business the way a trained human would.
+
+### 2. Maximum prevention of unwanted behaviors
+
+A customer-facing agent is only useful if you can trust it not to go off the rails: engaging in unwanted topics, making vain guarantees, or claiming that something happened when it didn't. Parlant views misalignment as a central problem: every primitive in the framework is designed to make it structurally harder for the agent to do something it shouldn't, and easier to catch and correct it when it does.
+
+### 3. Fastest possible feedback cycle with business experts
+
+Once an agent is in production, most of the feedback around it is driven by business experts. Parlant seeks to ease and accelerate the process of translating that feedback into agent behavior changes as directly and reliably as possible, so engineering time stays focused on building rather than on relaying every nuance by hand. No prompt rewrites, graph rewiring, or model retraining in the loop.
 
 ## Getting started
 
