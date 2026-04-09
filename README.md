@@ -65,7 +65,7 @@ Parlant is built around three goals that shape every decision in the framework:
 
 ### 1. Maximum control over the conversation experience
 
-Parlant was designed around a simple idea: developers should be able to control the agent's behavior with precision. In customer-facing conversations, small details matter — tone, timing, edge cases, policy constraints, and brand voice. So we chose a design that makes these aspects easily configurable and manageable. That approach adds complexity, but it gives teams tighter control over how the agent behaves in real conversations.
+Parlant was designed around a simple idea: developers should be able to control the agent's behavior with precision. In customer-facing conversations, small details matter, like tone, timing, edge cases, policy constraints, and brand voice. So we chose a design that makes these aspects easily configurable and manageable. That approach adds complexity, but it gives teams tighter control over how the agent behaves in real conversations.
 
 ### 2. Maximum prevention of unwanted behaviors
 
@@ -73,7 +73,7 @@ Parlant treats misalignment as a core design problem. It builds on [research int
 
 ### 3. Fastest path from business expert to agent behavior
 
-Parlant is designed so that those responsible for the agent's conversational experience can shape its behavior directly in a rapid feedback cycle that engineers can support. We focused on a design that lets you express instructions as directly as possible, without any manual rewiring of graphs or model fine-tuning, ensuring that valuable engineering time is only needed for deeper structural changes, not minor behavior adjustments.
+Parlant is designed so that those responsible for the agent's conversational experience can shape its behavior directly in a rapid feedback cycle that engineers can support. Parlant seeks to enable you to express and apply new instructions as directly as possible, without manual rewiring of graphs or model fine-tuning, ensuring that valuable engineering time is only needed for deeper structural changes, not minor behavior adjustments.
 
 ## Getting started
 
