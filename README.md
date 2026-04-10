@@ -41,9 +41,9 @@
 
 &nbsp;
 
-> **Looking for an open-source alternative to Ada, Decagon, and Sierra?**
+> **Looking for an open-source alternative to Ada, Decagon, or Sierra?**
 
-**Parlant streamlines conversational context engineering for enterprise-grade B2C (business to consumer) and sensitive B2B interactions that need to be consistent, compliant, and on-brand.**
+**Parlant streamlines the development and maintenance of enterprise-grade B2C (business-to-consumer) and sensitive B2B interactions that need to be consistent, compliant, and on-brand.**
 
 ## Why Parlant?
 
@@ -55,7 +55,7 @@ Conversational context engineering is hard because real-world interactions are d
 **Routed graphs** solve the prompt-overload problem, but the more routing you add, the more fragile it becomes when faced with the chaos of natural interactions.
 
 ### 🔑 The Solution: Context engineering, optimized for conversational control
-Parlant solves this with [context engineering](https://www.gartner.com/en/articles/context-engineering): getting the right context, no more and no less, into the prompt at the right time. You define your rules, knowledge, and tools once; the engine narrows the context in real-time to what's immediately relevant to the current turn.
+Parlant solves this with an agentic harness offering optimized [context engineering](https://www.gartner.com/en/articles/context-engineering) for conversational applications: getting the right context, no more and no less, into the prompt at the right time. You define your rules, knowledge, and tools once, while the engine narrows the context down in real-time to what's immediately relevant to each turn of the conversation.
 
 <img alt="Parlant Demo" src="https://github.com/emcie-co/parlant/blob/develop/docs/demo.gif?raw=true" width="100%" />
 
