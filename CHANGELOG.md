@@ -6,6 +6,7 @@ All notable changes to Parlant will be documented here.
 
 ### Added
 
+- Allow passing ToolId when attaching tools throughout the SDK
 - Add `AnyOf(tag)` and `AllOf(tag)` modifiers for explicit control over tag dependency semantics in `depend_on()` — `AnyOf` requires at least one tagged member to be active, `AllOf` requires all of them (bare `Tag` defaults to `AllOf`)
 - Add `depend_on_any()` to `Guideline`, `Tag`, and `Journey` for OR dependency relationships — at least one target must be active. Multiple `depend_on_any()` calls create independent OR groups that are AND'd together
 - Add event loop health monitoring to `/healthz` endpoint — measures callback latency and reports `healthy`, `degraded`, or `unhealthy` status with peak latency over a configurable window

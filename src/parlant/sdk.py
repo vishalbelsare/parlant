@@ -290,7 +290,25 @@ OutputMode = _MessageOutputMode
 
 INTEGRATED_TOOL_SERVICE_NAME = "built-in"
 
+ToolRef: TypeAlias = ToolEntry | ToolId
+"""A reference to a tool: either a ``ToolEntry`` (hosted on the integrated
+plugin server) or a ``ToolId`` (hosted on an external tool service)."""
+
 T = TypeVar("T")
+
+
+def _tool_ref_to_id(ref: ToolRef) -> ToolId:
+    """Convert a ToolRef to a ToolId."""
+    if isinstance(ref, ToolId):
+        return ref
+    return ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=ref.tool.name)
+
+
+async def _enable_tool_refs(plugin_server: PluginServer, refs: Iterable[ToolRef]) -> None:
+    """Enable only ToolEntry refs on the plugin server; skip ToolId refs."""
+    for ref in refs:
+        if isinstance(ref, ToolEntry):
+            await plugin_server.enable_tool(ref)
 
 
 JourneyStateId: TypeAlias = JourneyNodeId
@@ -847,7 +865,7 @@ class Tag:
     name: str
     _server: Optional[Server] = field(default=None, repr=False)
 
-    async def reevaluate_after(self, *tools: ToolEntry) -> Sequence[Relationship]:
+    async def reevaluate_after(self, *tools: ToolRef) -> Sequence[Relationship]:
         """Creates reevaluation relationships between this tag and one or more tools.
 
         When any of the tools is called, all guidelines tagged with this tag
@@ -868,7 +886,7 @@ class Tag:
                     kind=RelationshipEntityKind.TAG_ALL,
                 ),
                 target=RelationshipEntity(
-                    id=ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=t.tool.name),
+                    id=_tool_ref_to_id(t),
                     kind=RelationshipEntityKind.TOOL,
                 ),
                 kind=RelationshipKind.REEVALUATION,
@@ -1242,7 +1260,7 @@ class Guideline:
             for t in guideline_targets + journey_conditions
         ]
 
-    async def reevaluate_after(self, *tools: ToolEntry) -> Sequence[Relationship]:
+    async def reevaluate_after(self, *tools: ToolRef) -> Sequence[Relationship]:
         """Creates reevaluation relationships with one or more tools."""
         if not tools:
             raise SDKError("At least one tool must be provided for reevaluation.")
@@ -1255,7 +1273,7 @@ class Guideline:
                     kind=RelationshipEntityKind.GUIDELINE,
                 ),
                 target=RelationshipEntity(
-                    id=ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=t.tool.name),
+                    id=_tool_ref_to_id(t),
                     kind=RelationshipEntityKind.TOOL,
                 ),
                 kind=RelationshipKind.REEVALUATION,
@@ -1354,7 +1372,7 @@ class JourneyState:
 
     id: JourneyStateId
     action: str | None
-    tools: Sequence[ToolEntry]
+    tools: Sequence[ToolRef]
     metadata: Mapping[str, JSONSerializable]
     description: str | None
 
@@ -1383,7 +1401,7 @@ class JourneyState:
         state: TState | None = None,
         action: str | None = None,
         description: str | None = None,
-        tools: Sequence[ToolEntry] = [],
+        tools: Sequence[ToolRef] = [],
         journey: Journey | None = None,
         fork: bool = False,
         canned_responses: Sequence[CannedResponseId] = [],
@@ -1429,7 +1447,7 @@ class JourneyState:
                         kind=RelationshipEntityKind.TAG_ALL,
                     ),
                     target=RelationshipEntity(
-                        id=ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=t.tool.name),
+                        id=_tool_ref_to_id(t),
                         kind=RelationshipEntityKind.TOOL,
                     ),
                     kind=RelationshipKind.REEVALUATION,
@@ -1543,9 +1561,7 @@ class JourneyState:
                             kind=RelationshipEntityKind.TAG_ALL,
                         ),
                         target=RelationshipEntity(
-                            id=ToolId(
-                                service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=t.tool.name
-                            ),
+                            id=_tool_ref_to_id(t),
                             kind=RelationshipEntityKind.TOOL,
                         ),
                         kind=RelationshipKind.REEVALUATION,
@@ -1826,7 +1842,7 @@ def _validate_transition_parameters(
     # Determine which target parameter is being used
     target_param = None
     has_tool_state = tool_state and (
-        isinstance(tool_state, ToolEntry)
+        isinstance(tool_state, (ToolEntry, ToolId))
         or (isinstance(tool_state, Sequence) and len(tool_state) > 0)
     )
 
@@ -1955,7 +1971,7 @@ class InitialJourneyState(JourneyState):
         *,
         condition: str | None = None,
         tool_instruction: str | None = None,
-        tool_state: ToolEntry,
+        tool_state: ToolRef,
         description: str | None = None,
         metadata: Mapping[str, JSONSerializable] = {},
         on_match: Callable[[EngineContext, JourneyStateMatch], Awaitable[None]] | None = None,
@@ -1972,7 +1988,7 @@ class InitialJourneyState(JourneyState):
         *,
         condition: str | None = None,
         tool_instruction: str | None = None,
-        tool_state: Sequence[ToolEntry],
+        tool_state: Sequence[ToolRef],
         description: str | None = None,
         metadata: Mapping[str, JSONSerializable] = {},
         on_match: Callable[[EngineContext, JourneyStateMatch], Awaitable[None]] | None = None,
@@ -1998,7 +2014,7 @@ class InitialJourneyState(JourneyState):
         chat_state: str | None = None,
         tool_instruction: str | None = None,
         state: TState | None = None,
-        tool_state: ToolEntry | Sequence[ToolEntry] = [],
+        tool_state: ToolRef | Sequence[ToolRef] = [],
         journey: Journey | None = None,
         description: str | None = None,
         canned_responses: Sequence[CannedResponseId] = [],
@@ -2030,7 +2046,7 @@ class InitialJourneyState(JourneyState):
             state=state,
             action=chat_state or tool_instruction,
             description=description,
-            tools=[tool_state] if isinstance(tool_state, ToolEntry) else tool_state,
+            tools=[tool_state] if isinstance(tool_state, (ToolEntry, ToolId)) else tool_state,
             journey=journey,
             canned_responses=canned_responses,
             metadata=metadata,
@@ -2086,7 +2102,7 @@ class ToolJourneyState(JourneyState):
         *,
         condition: str | None = None,
         tool_instruction: str | None = None,
-        tool_state: ToolEntry,
+        tool_state: ToolRef,
         description: str | None = None,
         metadata: Mapping[str, JSONSerializable] = {},
         on_match: Callable[[EngineContext, JourneyStateMatch], Awaitable[None]] | None = None,
@@ -2103,7 +2119,7 @@ class ToolJourneyState(JourneyState):
         *,
         condition: str | None = None,
         tool_instruction: str | None = None,
-        tool_state: Sequence[ToolEntry],
+        tool_state: Sequence[ToolRef],
         description: str | None = None,
         metadata: Mapping[str, JSONSerializable] = {},
         on_match: Callable[[EngineContext, JourneyStateMatch], Awaitable[None]] | None = None,
@@ -2129,7 +2145,7 @@ class ToolJourneyState(JourneyState):
         chat_state: str | None = None,
         tool_instruction: str | None = None,
         state: TState | None = None,
-        tool_state: ToolEntry | Sequence[ToolEntry] = [],
+        tool_state: ToolRef | Sequence[ToolRef] = [],
         journey: Journey | None = None,
         description: str | None = None,
         canned_responses: Sequence[CannedResponseId] = [],
@@ -2161,7 +2177,7 @@ class ToolJourneyState(JourneyState):
             state=state,
             action=chat_state,
             description=description,
-            tools=[tool_state] if isinstance(tool_state, ToolEntry) else tool_state,
+            tools=[tool_state] if isinstance(tool_state, (ToolEntry, ToolId)) else tool_state,
             journey=journey,
             canned_responses=canned_responses,
             metadata=metadata,
@@ -2220,7 +2236,7 @@ class ChatJourneyState(JourneyState):
         *,
         condition: str | None = None,
         tool_instruction: str | None = None,
-        tool_state: ToolEntry,
+        tool_state: ToolRef,
         description: str | None = None,
         metadata: Mapping[str, JSONSerializable] = {},
         on_match: Callable[[EngineContext, JourneyStateMatch], Awaitable[None]] | None = None,
@@ -2237,7 +2253,7 @@ class ChatJourneyState(JourneyState):
         *,
         condition: str | None = None,
         tool_instruction: str | None = None,
-        tool_state: Sequence[ToolEntry],
+        tool_state: Sequence[ToolRef],
         description: str | None = None,
         metadata: Mapping[str, JSONSerializable] = {},
         on_match: Callable[[EngineContext, JourneyStateMatch], Awaitable[None]] | None = None,
@@ -2263,7 +2279,7 @@ class ChatJourneyState(JourneyState):
         chat_state: str | None = None,
         tool_instruction: str | None = None,
         state: TState | None = None,
-        tool_state: ToolEntry | Sequence[ToolEntry] = [],
+        tool_state: ToolRef | Sequence[ToolRef] = [],
         journey: Journey | None = None,
         description: str | None = None,
         canned_responses: Sequence[CannedResponseId] = [],
@@ -2295,7 +2311,7 @@ class ChatJourneyState(JourneyState):
             state=state,
             action=chat_state or tool_instruction,
             description=description,
-            tools=[tool_state] if isinstance(tool_state, ToolEntry) else tool_state,
+            tools=[tool_state] if isinstance(tool_state, (ToolEntry, ToolId)) else tool_state,
             journey=journey,
             canned_responses=canned_responses,
             metadata=metadata,
@@ -2353,7 +2369,7 @@ class ForkJourneyState(JourneyState):
         *,
         condition: str,
         tool_instruction: str | None = None,
-        tool_state: ToolEntry,
+        tool_state: ToolRef,
         description: str | None = None,
         metadata: Mapping[str, JSONSerializable] = {},
         on_match: Callable[[EngineContext, JourneyStateMatch], Awaitable[None]] | None = None,
@@ -2370,7 +2386,7 @@ class ForkJourneyState(JourneyState):
         *,
         condition: str,
         tool_instruction: str | None = None,
-        tool_state: Sequence[ToolEntry],
+        tool_state: Sequence[ToolRef],
         description: str | None = None,
         metadata: Mapping[str, JSONSerializable] = {},
         on_match: Callable[[EngineContext, JourneyStateMatch], Awaitable[None]] | None = None,
@@ -2396,7 +2412,7 @@ class ForkJourneyState(JourneyState):
         chat_state: str | None = None,
         tool_instruction: str | None = None,
         state: TState | None = None,
-        tool_state: ToolEntry | Sequence[ToolEntry] = [],
+        tool_state: ToolRef | Sequence[ToolRef] = [],
         journey: Journey | None = None,
         description: str | None = None,
         canned_responses: Sequence[CannedResponseId] = [],
@@ -2428,7 +2444,7 @@ class ForkJourneyState(JourneyState):
             state=state,
             action=chat_state or tool_instruction,
             description=description,
-            tools=[tool_state] if isinstance(tool_state, ToolEntry) else tool_state,
+            tools=[tool_state] if isinstance(tool_state, (ToolEntry, ToolId)) else tool_state,
             journey=journey,
             canned_responses=canned_responses,
             metadata=metadata,
@@ -2473,7 +2489,7 @@ class Journey:
         state_type: type[TState],
         action: str | None = None,
         description: str | None = None,
-        tools: Sequence[ToolEntry] = [],
+        tools: Sequence[ToolRef] = [],
         metadata: Mapping[str, JSONSerializable] = {},
         composition_mode: CompositionMode | None = None,
         id: JourneyStateId | None = None,
@@ -2485,11 +2501,12 @@ class Journey:
             ChatJourneyState: "chat",
         }[state_type]
 
-        for t in list(tools):
-            await self._server._plugin_server.enable_tool(t)
+        await _enable_tool_refs(self._server._plugin_server, tools)
 
         if len(tools) == 1 and not action:
-            action = f"Use the tool {tools[0].tool.name}"
+            first = tools[0]
+            tool_name = first.tool.name if isinstance(first, ToolEntry) else first.tool_name
+            action = f"Use the tool {tool_name}"
 
         # Node-level composition_mode overrides journey-level
         # If no node-level composition_mode provided, inherit from journey
@@ -2500,10 +2517,7 @@ class Journey:
         node = await self._container[JourneyStore].create_node(
             journey_id=self.id,
             action=action,
-            tools=[
-                ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=t.tool.name)
-                for t in tools
-            ],
+            tools=[_tool_ref_to_id(t) for t in tools],
             description=description,
             composition_mode=CompositionMode._to_core_composition_mode(effective_composition_mode),
             id=id,
@@ -2618,7 +2632,7 @@ class Journey:
         condition: str | None = None,
         action: str | None = None,
         description: str | None = None,
-        tools: Iterable[ToolEntry] = [],
+        tools: Iterable[ToolRef] = [],
         metadata: dict[str, JSONSerializable] = {},
         canned_responses: Sequence[CannedResponseId] = [],
         criticality: Criticality = Criticality.MEDIUM,
@@ -2667,7 +2681,7 @@ class Journey:
         self,
         condition: str | None = None,
         description: str | None = None,
-        tools: Iterable[ToolEntry] = [],
+        tools: Iterable[ToolRef] = [],
         canned_responses: Sequence[CannedResponseId] = [],
         composition_mode: CompositionMode | None = None,
         matcher: Callable[[GuidelineMatchingContext, Guideline], Awaitable[GuidelineMatch]]
@@ -2699,7 +2713,7 @@ class Journey:
 
     async def attach_tool(
         self,
-        tool: ToolEntry,
+        tool: ToolRef,
         condition: str,
     ) -> GuidelineId:
         """Attaches a tool to the journey, to be usable by the agent under the specified condition.
@@ -2713,7 +2727,9 @@ class Journey:
             stacklevel=2,
         )
 
-        await self._server._plugin_server.enable_tool(tool)
+        await _enable_tool_refs(self._server._plugin_server, [tool])
+
+        tool_id = _tool_ref_to_id(tool)
 
         guideline = await self._container[GuidelineStore].create_guideline(
             condition=condition,
@@ -2723,7 +2739,7 @@ class Journey:
         self._server._add_guideline_evaluation(
             guideline.id,
             GuidelineContent(condition=condition, action=None),
-            [ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=tool.tool.name)],
+            [tool_id],
         )
 
         await self._container[RelationshipStore].create_relationship(
@@ -2740,7 +2756,7 @@ class Journey:
 
         await self._container[GuidelineToolAssociationStore].create_association(
             guideline_id=guideline.id,
-            tool_id=ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=tool.tool.name),
+            tool_id=tool_id,
         )
 
         return guideline.id
@@ -2914,7 +2930,7 @@ class Variable:
     id: ContextVariableId
     name: str
     description: str | None
-    tool: ToolEntry | None
+    tool: ToolRef | None
     freshness_rules: str | None
     tags: Sequence[Tag]
     _server: Server
@@ -3354,7 +3370,7 @@ class Agent:
         action: str | None = None,
         id: GuidelineId | None = None,
         description: str | None = None,
-        tools: Iterable[ToolEntry] = [],
+        tools: Iterable[ToolRef] = [],
         metadata: dict[str, JSONSerializable] = {},
         canned_responses: Sequence[CannedResponseId] = [],
         criticality: Criticality = Criticality.MEDIUM,
@@ -3402,7 +3418,7 @@ class Agent:
         self,
         condition: str | None = None,
         description: str | None = None,
-        tools: Iterable[ToolEntry] = [],
+        tools: Iterable[ToolRef] = [],
         canned_responses: Sequence[CannedResponseId] = [],
         criticality: Criticality = Criticality.MEDIUM,
         composition_mode: CompositionMode | None = None,
@@ -3436,7 +3452,7 @@ class Agent:
 
     async def attach_tool(
         self,
-        tool: ToolEntry,
+        tool: ToolRef,
         condition: str,
     ) -> GuidelineId:
         """Attaches a tool to the agent, to be usable under the specified condition.
@@ -3450,7 +3466,9 @@ class Agent:
             stacklevel=2,
         )
 
-        await self._server._plugin_server.enable_tool(tool)
+        await _enable_tool_refs(self._server._plugin_server, [tool])
+
+        tool_id = _tool_ref_to_id(tool)
 
         guideline = await self._container[GuidelineStore].create_guideline(
             condition=condition,
@@ -3460,12 +3478,12 @@ class Agent:
         self._server._add_guideline_evaluation(
             guideline.id,
             GuidelineContent(condition=condition, action=None),
-            [ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=tool.tool.name)],
+            [tool_id],
         )
 
         await self._container[GuidelineToolAssociationStore].create_association(
             guideline_id=guideline.id,
-            tool_id=ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=tool.tool.name),
+            tool_id=tool_id,
         )
 
         return guideline.id
@@ -3524,7 +3542,7 @@ class Agent:
         self,
         name: str,
         description: str | None = None,
-        tool: ToolEntry | None = None,
+        tool: ToolRef | None = None,
         freshness_rules: str | None = None,
     ) -> Variable:
         """Creates a variable with the specified name, description, tool, and freshness rules."""
@@ -3532,12 +3550,12 @@ class Agent:
         self._server._advance_creation_progress()
 
         if tool:
-            await self._server._plugin_server.enable_tool(tool)
+            await _enable_tool_refs(self._server._plugin_server, [tool])
 
         variable = await self._container[ContextVariableStore].create_variable(
             name=name,
             description=description,
-            tool_id=ToolId(INTEGRATED_TOOL_SERVICE_NAME, tool.tool.name) if tool else None,
+            tool_id=_tool_ref_to_id(tool) if tool else None,
             freshness_rules=freshness_rules,
             tags=[_Tag.for_agent_id(self.id).id],
         )
@@ -4275,7 +4293,7 @@ class Server:
         condition: str | None,
         action: str | None,
         description: str | None,
-        tools: Iterable[ToolEntry],
+        tools: Iterable[ToolRef],
         metadata: dict[str, JSONSerializable],
         criticality: Criticality,
         composition_mode: CompositionMode | None,
@@ -4300,12 +4318,10 @@ class Server:
 
         self._advance_creation_progress()
 
-        tool_ids = [
-            ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=t.tool.name) for t in tools
-        ]
+        tools_list = list(tools)
+        tool_ids = [_tool_ref_to_id(t) for t in tools_list]
 
-        for t in list(tools):
-            await self._plugin_server.enable_tool(t)
+        await _enable_tool_refs(self._plugin_server, tools_list)
 
         guideline = await self.container[GuidelineStore].create_guideline(
             condition=condition or "",
@@ -4352,10 +4368,10 @@ class Server:
                 kind=RelationshipKind.DEPENDENCY,
             )
 
-        for t in list(tools):
+        for t in tools_list:
             await self.container[GuidelineToolAssociationStore].create_association(
                 guideline_id=guideline.id,
-                tool_id=ToolId(service_name=INTEGRATED_TOOL_SERVICE_NAME, tool_name=t.tool.name),
+                tool_id=_tool_ref_to_id(t),
             )
 
         result_guideline = Guideline(
@@ -5679,6 +5695,7 @@ __all__ = [
     "ToolContextAccessor",
     "ToolEntry",
     "ToolEventData",
+    "ToolRef",
     "TransientGuideline",
     "ToolId",
     "ToolParameterDescriptor",
