@@ -20,6 +20,7 @@ All notable changes to Parlant will be documented here.
 
 - Fix priority and dependency relationships propagating through inactive intermediaries — only direct relationships now affect resolution, consistent with the reinstatement principle from argumentation theory
 - Fix entailment recording only the highest-scoring source when multiple guidelines entail the same target — all entailing relationships are now recorded in resolution details
+- Fix SDK startup appearing stuck at 100% after evaluations — add "Applying evaluations" progress bar for the metadata-writing phase
 - Fix `Variable.get_value()` returning `None` when called from a retriever, caused by retrievers starting before context variables were loaded
 - Fix journey tool-state auto-advancing even when the tool did not run
 

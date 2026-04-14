@@ -4684,58 +4684,93 @@ class Server:
                 overall_progress.update(overall, completed=100)
                 evaluation_results = await gather
 
+        total_results = len(evaluation_results)
+
+        if self.log_level == LogLevel.TRACE or total_results == 0:
+            await self._apply_evaluation_results(evaluation_results)
+        else:
+            applying_progress = Progress(
+                "[progress.description]{task.description}",
+                BarColumn(),
+                TaskProgressColumn(style="bold blue"),
+                TimeElapsedColumn(),
+            )
+
+            with applying_progress:
+                bar = applying_progress.add_task("Applying evaluations", total=total_results)
+
+                for i, (entity_type, entity_id, result) in enumerate(evaluation_results):
+                    await self._apply_single_evaluation(entity_type, entity_id, result)
+                    applying_progress.update(bar, completed=i + 1)
+
+        print()
+
+    async def _apply_evaluation_results(
+        self,
+        evaluation_results: Sequence[
+            tuple[
+                Literal["guideline", "journey"],
+                GuidelineId | JourneyId,
+                _CachedEvaluator.GuidelineEvaluation | _CachedEvaluator.JourneyEvaluation,
+            ]
+        ],
+    ) -> None:
         for entity_type, entity_id, result in evaluation_results:
-            if entity_type == "guideline":
-                guideline = await self._container[GuidelineStore].read_guideline(
-                    guideline_id=cast(GuidelineId, entity_id)
+            await self._apply_single_evaluation(entity_type, entity_id, result)
+
+    async def _apply_single_evaluation(
+        self,
+        entity_type: Literal["guideline", "journey"],
+        entity_id: GuidelineId | JourneyId,
+        result: _CachedEvaluator.GuidelineEvaluation | _CachedEvaluator.JourneyEvaluation,
+    ) -> None:
+        if entity_type == "guideline":
+            guideline = await self._container[GuidelineStore].read_guideline(
+                guideline_id=cast(GuidelineId, entity_id)
+            )
+
+            properties = cast(_CachedEvaluator.GuidelineEvaluation, result).properties
+
+            properties_to_add = {k: v for k, v in properties.items() if k not in guideline.metadata}
+
+            for key, value in properties_to_add.items():
+                await self._container[GuidelineStore].set_metadata(
+                    guideline_id=cast(GuidelineId, entity_id),
+                    key=key,
+                    value=value,
                 )
 
-                properties = cast(_CachedEvaluator.GuidelineEvaluation, result).properties
+        elif entity_type == "journey":
+            for node_id, properties in cast(
+                _CachedEvaluator.JourneyEvaluation, result
+            ).node_properties.items():
+                if node_id == END_JOURNEY.id:
+                    continue
 
+                node = await self._container[JourneyStore].read_node(node_id)
                 properties_to_add = {
-                    k: v for k, v in properties.items() if k not in guideline.metadata
+                    k: v
+                    for k, v in properties.items()
+                    if k not in node.metadata or node.metadata[k] is None
                 }
 
+                journey_node_properties = {
+                    **(
+                        cast(dict[str, JSONSerializable], properties.get("journey_node", {}))
+                        if properties
+                        else {}
+                    ),
+                    **cast(dict[str, JSONSerializable], node.metadata.get("journey_node", {})),
+                }
+                if journey_node_properties:
+                    properties_to_add["journey_node"] = journey_node_properties
+
                 for key, value in properties_to_add.items():
-                    await self._container[GuidelineStore].set_metadata(
-                        guideline_id=cast(GuidelineId, entity_id),
+                    await self._container[JourneyStore].set_node_metadata(
+                        node_id=node_id,
                         key=key,
                         value=value,
                     )
-
-            elif entity_type == "journey":
-                for node_id, properties in cast(
-                    _CachedEvaluator.JourneyEvaluation, result
-                ).node_properties.items():
-                    if node_id == END_JOURNEY.id:
-                        continue
-
-                    node = await self._container[JourneyStore].read_node(node_id)
-                    properties_to_add = {
-                        k: v
-                        for k, v in properties.items()
-                        if k not in node.metadata or node.metadata[k] is None
-                    }
-
-                    journey_node_properties = {
-                        **(
-                            cast(dict[str, JSONSerializable], properties.get("journey_node", {}))
-                            if properties
-                            else {}
-                        ),
-                        **cast(dict[str, JSONSerializable], node.metadata.get("journey_node", {})),
-                    }
-                    if journey_node_properties:
-                        properties_to_add["journey_node"] = journey_node_properties
-
-                    for key, value in properties_to_add.items():
-                        await self._container[JourneyStore].set_node_metadata(
-                            node_id=node_id,
-                            key=key,
-                            value=value,
-                        )
-
-        print()
 
     async def _setup_retrievers(self) -> None:
         async def setup_retriever(
