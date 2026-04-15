@@ -5,7 +5,7 @@ All notable changes to Parlant will be documented here.
 ## [Unreleased]
 TBD
 
-## [3.3.1] - 2025-04-14
+## [3.3.1] - 2026-04-14
 
 ### Added
 
@@ -28,7 +28,7 @@ TBD
 - Fix `Variable.get_value()` returning `None` when called from a retriever, caused by retrievers starting before context variables were loaded
 - Fix journey tool-state auto-advancing even when the tool did not run
 
-## [3.3.0] - 2025-03-15
+## [3.3.0] - 2026-03-15
 
 ### Added
 
@@ -80,7 +80,7 @@ TBD
 
 - Remove stale `parlant-test` entry point and testing framework documentation from README
 
-## [3.2.2] - 2025-02-18
+## [3.2.2] - 2026-02-18
 
 ### Added
 
