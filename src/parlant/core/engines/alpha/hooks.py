@@ -15,10 +15,9 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Awaitable, Callable, Optional, Sequence, TypeAlias, Union
+from typing import Any, Awaitable, Callable, Optional, Sequence, TypeAlias
 
 from parlant.core.engines.alpha.engine_context import EngineContext
-from parlant.core.engines.alpha.engine_context import LoadedContext  # type: ignore
 from parlant.core.guidelines import GuidelineId
 from parlant.core.journeys import JourneyId
 from parlant.core.engines.alpha.guideline_matching.guideline_match import GuidelineMatch
@@ -42,10 +41,8 @@ class EngineHookResult(Enum):
     """
 
 
-EngineHook: TypeAlias = Union[
-    Callable[[EngineContext, Any, Optional[Exception]], Awaitable[EngineHookResult]],
-    # TODO: Remove this once LoadedContext is removed
-    Callable[[LoadedContext, Any, Optional[Exception]], Awaitable[EngineHookResult]],  # type: ignore
+EngineHook: TypeAlias = Callable[
+    [EngineContext, Any, Optional[Exception]], Awaitable[EngineHookResult]
 ]
 """A callable that takes a EngineContext and an optional Exception, and returns an EngineHookResult."""
 
@@ -158,8 +155,7 @@ class EngineHooks:
         exc: Optional[Exception] = None,
     ) -> bool:
         for callable in hooks:
-            # TODO: Remove type: ignore once LoadedContext is removed
-            match await callable(context, payload, exc):  # type: ignore
+            match await callable(context, payload, exc):
                 case EngineHookResult.CALL_NEXT:
                     continue
                 case EngineHookResult.RESOLVE:

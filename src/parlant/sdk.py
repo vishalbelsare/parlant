@@ -132,7 +132,6 @@ from parlant.core.engines.alpha.prompt_builder import PromptBuilder, PromptSecti
 from parlant.core.engines.alpha.hooks import EngineHook, EngineHookResult, EngineHooks
 from parlant.core.engines.alpha.engine_context import (
     EngineContext,
-    LoadedContext,  # type: ignore
     Interaction,
     InteractionMessage,
 )
@@ -5686,7 +5685,6 @@ __all__ = [
     "JourneyTransition",
     "JourneyTransitionId",
     "Lifespan",
-    "LoadedContext",
     "LogLevel",
     "Logger",
     "MATCH_ALWAYS",
