@@ -91,6 +91,7 @@ from parlant.core.engines.alpha.tool_event_generator import (
 from parlant.core.engines.alpha.utils import context_variables_to_json
 from parlant.core.engines.types import Context, Engine, UtteranceRationale, UtteranceRequest
 from parlant.core.emissions import EventEmitter, EmittedEvent
+from parlant.core.tags import Tag
 from parlant.core.tracer import Tracer
 from parlant.core.loggers import Logger
 from parlant.core.entity_cq import EntityQueries, EntityCommands
@@ -1101,6 +1102,7 @@ class AlphaEngine(Engine):
         keys_to_check_in_order_of_importance = (
             [context.customer.id]  # Customer-specific value
             + [f"tag:{tag_id}" for tag_id in context.customer.tags]  # Tag-specific value
+            + [Tag.for_agent_id(context.agent.id).id]  # Agent-specific value
             + [ContextVariableStore.GLOBAL_KEY]  # Global value
         )
 

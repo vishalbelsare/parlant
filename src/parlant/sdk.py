@@ -2956,6 +2956,15 @@ class Variable:
             data=value,
         )
 
+    async def set_value_for_agent(self, agent: Agent, value: JSONSerializable) -> None:
+        """Sets the value of the variable for a specific agent."""
+
+        await self._container[ContextVariableStore].update_value(
+            variable_id=self.id,
+            key=_Tag.for_agent_id(agent.id).id,
+            data=value,
+        )
+
     async def get_value_for_customer(self, customer: Customer) -> JSONSerializable | None:
         """Retrieves the value of the variable for a specific customer."""
 
@@ -2981,6 +2990,16 @@ class Variable:
         value = await self._container[ContextVariableStore].read_value(
             variable_id=self.id,
             key=ContextVariableStore.GLOBAL_KEY,
+        )
+
+        return value.data if value else None
+
+    async def get_value_for_agent(self, agent: Agent) -> JSONSerializable | None:
+        """Retrieves the value of the variable for a specific agent."""
+
+        value = await self._container[ContextVariableStore].read_value(
+            variable_id=self.id,
+            key=_Tag.for_agent_id(agent.id).id,
         )
 
         return value.data if value else None
