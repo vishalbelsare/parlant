@@ -300,11 +300,11 @@ class GuidelineModule:
 
         journeys = await self._journey_store.list_journeys()
         for journey in journeys:
-            for condition in journey.conditions:
-                if condition == guideline_id:
-                    await self._journey_store.remove_condition(
+            for trigger in journey.triggers:
+                if trigger == guideline_id:
+                    await self._journey_store.remove_trigger(
                         journey_id=journey.id,
-                        condition=condition,
+                        trigger=trigger,
                     )
 
         await self._guideline_store.delete_guideline(guideline_id=guideline_id)

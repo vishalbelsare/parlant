@@ -58,7 +58,7 @@ def given_a_journey_to_when(
 
     journey = context.sync_await(
         journey_store.create_journey(
-            conditions=[conditioning_guideline.id],
+            triggers=[conditioning_guideline.id],
             title=journey_title,
             description=journey_description,
         )
@@ -118,7 +118,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="Lock a Card",
                 description="Help the user lock their card.",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -401,7 +401,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="reset password journey",
                 description="",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -660,7 +660,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="book flight journey",
                 description="",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -925,7 +925,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="book taxi ride journey",
                 description="",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -1128,7 +1128,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="place food order journey",
                 description="",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -1494,7 +1494,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="decrease spending journey",
                 description="",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -1709,7 +1709,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="Loan Application Request",
                 description="",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -2060,7 +2060,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="change credit limit journey",
                 description="",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -2326,7 +2326,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="Simple Lab Journey",
                 description="Check and report lab results to the customer",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -2487,7 +2487,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="Complex Lab Journey",
                 description="Handle different types of lab result requests",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -2658,7 +2658,7 @@ def given_the_journey_called(
             journey_store.create_journey(
                 title="Book a Hotel Journey",
                 description="Assist the customer in booking a hotel",
-                conditions=[c.id for c in condition_guidelines],
+                triggers=[c.id for c in condition_guidelines],
                 tags=[],
             )
         )
@@ -2902,7 +2902,7 @@ def given_a_journey_titled(
         journey_store.create_journey(
             title=journey_title,
             description="",
-            conditions=[],
+            triggers=[],
             tags=[],
         )
     )
@@ -2929,9 +2929,9 @@ def given_the_journey_is_triggered_by_condition_applies(
     guideline_condition = context.guidelines[condition_name]
 
     context.sync_await(
-        journey_store.add_condition(
+        journey_store.add_trigger(
             journey_id=journey.id,
-            condition=guideline_condition.id,
+            trigger=guideline_condition.id,
         )
     )
 
@@ -2969,9 +2969,9 @@ def given_the_journey_is_triggered_when(
         )
     )
     context.sync_await(
-        journey_store.add_condition(
+        journey_store.add_trigger(
             journey_id=journey.id,
-            condition=guideline_condition.id,
+            trigger=guideline_condition.id,
         )
     )
 

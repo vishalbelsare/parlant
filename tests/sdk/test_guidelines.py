@@ -200,7 +200,7 @@ class Test_that_guideline_can_take_priority_over_journey(SDKTest):
         # Journey that also matches when customer asks about drinks
         self.journey = await self.agent.create_journey(
             title="Drink Recommendation Journey",
-            conditions=["Customer asks about drinks"],
+            triggers=["Customer asks about drinks"],
             description="Recommend Coca-Cola to the customer",
         )
 
@@ -239,7 +239,7 @@ class Test_that_guideline_can_depend_on_journey(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="VIP Journey",
-            conditions=["Customer is a VIP"],
+            triggers=["Customer is a VIP"],
             description="Assist the customer in a premium flow",
         )
 
@@ -631,7 +631,7 @@ class Test_that_journey_scoped_guideline_can_use_custom_matcher(SDKTest):
         self.journey = await self.agent.create_journey(
             title="Order Something",
             description="Journey to handle orders",
-            conditions=["Customer wants to order something"],
+            triggers=["Customer wants to order something"],
         )
 
         self.guideline = await self.journey.create_guideline(
@@ -659,7 +659,7 @@ class Test_that_match_handler_on_journey_scoped_guideline_works(SDKTest):
         self.journey = await self.agent.create_journey(
             title="Order Something",
             description="Journey to handle orders",
-            conditions=["Customer wants to order something"],
+            triggers=["Customer wants to order something"],
         )
 
         self.handler_called = False

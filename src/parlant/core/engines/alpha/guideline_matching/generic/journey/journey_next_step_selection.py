@@ -71,7 +71,7 @@ class _JourneyEdge:
 class JourneyNextStepSelectionShot(Shot):
     interaction_events: Sequence[Event]
     journey_title: str
-    conditions: Sequence[str]
+    triggers: Sequence[str]
     current_node: _JourneyNode
     follow_up_conditions: dict[str, _JourneyEdge]
     expected_result: JourneyNextStepSelectionSchema
@@ -88,7 +88,7 @@ class JourneyNextStepSelection:
         context: GuidelineMatchingContext,
         node_guidelines: Sequence[Guideline] = [],
         journey_path: Sequence[str | None] = [],
-        journey_conditions: Sequence[Guideline] = [],
+        journey_triggers: Sequence[Guideline] = [],
     ) -> None:
         self._logger = logger
 
@@ -99,7 +99,7 @@ class JourneyNextStepSelection:
 
         self._context = context
         self._examined_journey = examined_journey
-        self._journey_conditions = journey_conditions
+        self._journey_triggers = journey_triggers
 
         self._guideline_id_to_guideline: dict[GuidelineId, Guideline] = {
             g.id: g for g in node_guidelines
@@ -389,19 +389,19 @@ class JourneyNextStepSelection:
         follow_up_conditions: dict[str, _JourneyEdge],
         journey_title: str,
         journey_description: str = "",
-        journey_conditions: Sequence[Guideline] = [],
+        journey_triggers: Sequence[Guideline] = [],
     ) -> str:
         if journey_description:
             journey_description_str = f"\nJourney Description: {journey_description}"
         else:
             journey_description_str = ""
-        if journey_conditions:
-            journey_conditions_str = " OR ".join(
-                f'"{g.content.condition}"' for g in journey_conditions
+        if journey_triggers:
+            journey_triggers_str = " OR ".join(
+                f'"{g.content.condition}"' for g in journey_triggers
             )
-            journey_conditions_str = f"\nJourney activation condition: {journey_conditions_str}"
+            journey_triggers_str = f"\nJourney activation condition: {journey_triggers_str}"
         else:
-            journey_conditions_str = ""
+            journey_triggers_str = ""
         journey_restart = ""
         if self._reset_journey:
             journey_restart = """
@@ -443,7 +443,7 @@ Condition ({id}): {e.condition}
         transition_description = f"""
 
 Journey: {journey_title}
-{journey_conditions_str}{journey_description_str}
+{journey_triggers_str}{journey_description_str}
 
 CURRENT STEP -
 {current_node_description}
@@ -515,7 +515,7 @@ OUTPUT FORMAT
             current_node=shot.current_node,
             follow_up_conditions=shot.follow_up_conditions,
             journey_title=shot.journey_title,
-            journey_conditions=[
+            journey_triggers=[
                 Guideline(
                     id=GuidelineId(f"c-{i}"),
                     creation_utc=datetime.now(timezone.utc),
@@ -528,7 +528,7 @@ OUTPUT FORMAT
                     criticality=Criticality.HIGH,
                     tags=[],
                 )
-                for i, c in enumerate(shot.conditions)
+                for i, c in enumerate(shot.triggers)
             ],
         )
 
@@ -654,7 +654,7 @@ Example section is over. The following is the real data you need to use for your
                 follow_up_conditions=self._follow_up_conditions,
                 journey_title=self._examined_journey.title,
                 journey_description=self._examined_journey.description,
-                journey_conditions=self._journey_conditions,
+                journey_triggers=self._journey_triggers,
             ),
         )
         builder.add_section(
@@ -1023,7 +1023,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 1 - Stay on current step",
         interaction_events=example_1_events,
         journey_title="Book Taxi Journey",
-        conditions=["The customer wants to book a taxi"],
+        triggers=["The customer wants to book a taxi"],
         follow_up_conditions=example_1_follow_up_nodes,
         current_node=example_1_current_node,
         expected_result=example_1_expected,
@@ -1032,7 +1032,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 2 - Information provided not on journey step order",
         interaction_events=example_2_events,
         journey_title="Book Taxi Journey",
-        conditions=["The customer wants to book a taxi"],
+        triggers=["The customer wants to book a taxi"],
         follow_up_conditions=example_2_follow_up_nodes,
         current_node=example_2_current_node,
         expected_result=example_2_expected,
@@ -1041,7 +1041,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 3 -  Information provided earlier in the conversation",
         interaction_events=example_3_events,
         journey_title="Loan Journey",
-        conditions=["The customer wants a loan"],
+        triggers=["The customer wants a loan"],
         follow_up_conditions=example_3_follow_up_nodes,
         current_node=example_3_current_node,
         expected_result=example_3_expected,
@@ -1050,7 +1050,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 4 - All required information is provided; select the best matching condition",
         interaction_events=example_4_events,
         journey_title="Book Taxi Journey",
-        conditions=["The customer wants to book a taxi"],
+        triggers=["The customer wants to book a taxi"],
         follow_up_conditions=example_4_follow_up_nodes,
         current_node=example_4_current_node,
         expected_result=example_4_expected,
@@ -1059,7 +1059,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 5 -  Information provided in current and earlier messages",
         interaction_events=example_5_events,
         journey_title="Loan Journey",
-        conditions=["The customer wants a loan"],
+        triggers=["The customer wants a loan"],
         follow_up_conditions=example_5_follow_up_nodes,
         current_node=example_5_current_node,
         expected_result=example_5_expected,

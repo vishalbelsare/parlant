@@ -64,7 +64,7 @@ from typing import (
     TypedDict,
     cast,
 )
-from typing_extensions import overload
+from typing_extensions import deprecated, overload
 from fastapi import FastAPI
 import httpx
 from lagom import Container
@@ -999,6 +999,35 @@ def _tags_from_ids(tag_ids: Sequence[TagId]) -> list[Tag]:
     return [Tag(id=tag_id, name=str(tag_id)) for tag_id in tag_ids]
 
 
+def _resolve_journey_triggers_kwarg(
+    triggers: list[str | Guideline] | None,
+    conditions: list[str | Guideline] | None,
+) -> list[str | Guideline]:
+    """Resolve the journey ``triggers`` argument with back-compat for the
+    deprecated ``conditions`` alias.
+
+    Emits a ``DeprecationWarning`` if ``conditions`` was used and raises if
+    both are provided.
+    """
+    if conditions is not None:
+        if triggers is not None:
+            raise SDKError(
+                "Pass either 'triggers' (preferred) or 'conditions' (deprecated), not both."
+            )
+        import warnings
+
+        warnings.warn(
+            "The 'conditions' parameter on create_journey is deprecated. "
+            "Use 'triggers' instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return list(conditions)
+    if triggers is None:
+        raise SDKError("create_journey requires 'triggers' to be provided.")
+    return list(triggers)
+
+
 @dataclass(frozen=True)
 class Relationship:
     """A relationship between two entities in the system."""
@@ -1236,8 +1265,8 @@ class Guideline:
             )
 
         guideline_targets = [t for t in targets if isinstance(t, Guideline)]
-        journey_conditions = list(
-            chain.from_iterable([t.conditions for t in targets if isinstance(t, Journey)])
+        journey_triggers = list(
+            chain.from_iterable([t.triggers for t in targets if isinstance(t, Journey)])
         )
 
         return [
@@ -1246,7 +1275,7 @@ class Guideline:
                 kind=RelationshipKind.DISAMBIGUATION,
                 direction="source",
             )
-            for t in guideline_targets + journey_conditions
+            for t in guideline_targets + journey_triggers
         ]
 
     async def reevaluate_after(self, *tools: ToolRef) -> Sequence[Relationship]:
@@ -2453,7 +2482,7 @@ class Journey:
     id: JourneyId
     title: str
     description: str
-    conditions: list[Guideline]
+    triggers: list[Guideline]
     states: Sequence[JourneyState]
     transitions: Sequence[JourneyTransition[JourneyState]]
     tags: Sequence[Tag]
@@ -2465,6 +2494,12 @@ class Journey:
 
     labels: set[str] = field(default_factory=set)
     priority: int = 0
+
+    @property
+    @deprecated("Use 'triggers' instead of 'conditions'")
+    def conditions(self) -> list[Guideline]:
+        """Deprecated alias for ``triggers``."""
+        return self.triggers
 
     @property
     def initial_state(self) -> InitialJourneyState:
@@ -3308,7 +3343,7 @@ class Agent:
         self,
         title: str,
         description: str,
-        conditions: list[str | Guideline],
+        triggers: list[str | Guideline] | None = None,
         id: JourneyId | None = None,
         composition_mode: CompositionMode | None = None,
         on_selected: Callable[[EngineContext, JourneyMatch], Awaitable[None]] | None = None,
@@ -3317,15 +3352,18 @@ class Agent:
         labels: Iterable[str] = (),
         dependencies: Sequence[Guideline | Journey] = [],
         priority: int = 0,
+        conditions: list[str | Guideline] | None = None,
     ) -> Journey:
-        """Creates a new journey with the specified title, description, and conditions."""
+        """Creates a new journey with the specified title, description, and triggers."""
+
+        triggers = _resolve_journey_triggers_kwarg(triggers, conditions)
 
         self._server._advance_creation_progress()
 
         journey = await self._server.create_journey(
             title,
             description,
-            conditions,
+            triggers,
             tags=[t.id for t in tags],
             id=id,
             composition_mode=composition_mode,
@@ -3347,7 +3385,7 @@ class Agent:
             id=journey.id,
             title=journey.title,
             description=description,
-            conditions=journey.conditions,
+            triggers=journey.triggers,
             tags=[*journey.tags, *tags],
             states=journey.states,
             transitions=journey.transitions,
@@ -5210,7 +5248,7 @@ class Server:
         self,
         title: str,
         description: str,
-        conditions: list[str | Guideline],
+        triggers: list[str | Guideline] | None = None,
         tags: Sequence[TagId] = [],
         id: JourneyId | None = None,
         composition_mode: CompositionMode | None = None,
@@ -5218,27 +5256,30 @@ class Server:
         on_message: Callable[[EngineContext, JourneyMatch], Awaitable[None]] | None = None,
         labels: Iterable[str] = (),
         priority: int = 0,
+        conditions: list[str | Guideline] | None = None,
     ) -> Journey:
-        """Creates a new journey with the specified title, description, and conditions."""
+        """Creates a new journey with the specified title, description, and triggers."""
+
+        triggers = _resolve_journey_triggers_kwarg(triggers, conditions)
 
         self._advance_creation_progress()
 
-        condition_guidelines = [c for c in conditions if isinstance(c, Guideline)]
+        trigger_guidelines = [c for c in triggers if isinstance(c, Guideline)]
 
-        str_conditions = [c for c in conditions if isinstance(c, str)]
+        str_triggers = [c for c in triggers if isinstance(c, str)]
 
-        for str_condition in str_conditions:
+        for str_trigger in str_triggers:
             guideline = await self._container[GuidelineStore].create_guideline(
-                condition=str_condition,
+                condition=str_trigger,
             )
 
             self._add_guideline_evaluation(
                 guideline.id,
-                GuidelineContent(condition=str_condition, action=None),
+                GuidelineContent(condition=str_trigger, action=None),
                 tool_ids=[],
             )
 
-            condition_guidelines.append(
+            trigger_guidelines.append(
                 Guideline(
                     id=guideline.id,
                     condition=guideline.content.condition,
@@ -5253,7 +5294,7 @@ class Server:
         stored_journey = await self._container[JourneyStore].create_journey(
             title=title,
             description=description,
-            conditions=[c.id for c in condition_guidelines],
+            triggers=[c.id for c in trigger_guidelines],
             tags=[],
             id=id,
             composition_mode=CompositionMode._to_core_composition_mode(composition_mode),
@@ -5265,7 +5306,7 @@ class Server:
             id=stored_journey.id,
             title=title,
             description=description,
-            conditions=condition_guidelines,
+            triggers=trigger_guidelines,
             states=[],
             transitions=[],
             tags=_tags_from_ids(tags),
@@ -5292,7 +5333,7 @@ class Server:
             )
         )
 
-        for c in condition_guidelines:
+        for c in trigger_guidelines:
             await self._container[GuidelineStore].upsert_tag(
                 guideline_id=c.id,
                 tag_id=_Tag.for_journey_id(journey_id=journey.id).id,

@@ -34,7 +34,7 @@ class Test_that_transition_to_validates_invalid_combinations_like_state_and_tool
 
         self.journey = await self.agent.create_journey(
             title="Validation Journey",
-            conditions=["Customer needs help"],
+            triggers=["Customer needs help"],
             description="Journey for testing validation",
         )
 
@@ -84,7 +84,7 @@ class Test_that_transition_to_validates_conflicting_parameters(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Validation Journey",
-            conditions=["Customer needs help"],
+            triggers=["Customer needs help"],
             description="Journey for testing validation",
         )
 
@@ -113,7 +113,7 @@ class Test_that_transition_to_validates_conflicting_parameters(SDKTest):
         # Test conflict: tool_state + journey
         sub_journey = await self.agent.create_journey(
             title="Sub Journey",
-            conditions=[],
+            triggers=[],
             description="Sub journey for testing",
         )
 
@@ -149,7 +149,7 @@ class Test_that_transition_to_requires_at_least_one_target_parameter(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Validation Journey",
-            conditions=["Customer needs help"],
+            triggers=["Customer needs help"],
             description="Journey for testing validation",
         )
 
@@ -176,7 +176,7 @@ class Test_that_fork_journey_state_requires_condition_except_for_journey_transit
 
         self.journey = await self.agent.create_journey(
             title="Fork Validation Journey",
-            conditions=["Customer needs routing"],
+            triggers=["Customer needs routing"],
             description="Journey for testing fork validation",
         )
 
@@ -219,7 +219,7 @@ class Test_that_fork_journey_state_requires_condition_except_for_journey_transit
         # Test ForkJourneyState without condition for journey - should succeed (exception case)
         sub_journey = await self.agent.create_journey(
             title="Sub Journey",
-            conditions=[],
+            triggers=[],
             description="Sub journey for testing",
         )
 
@@ -239,7 +239,7 @@ class Test_that_tool_journey_state_validates_parameters(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Tool Validation Journey",
-            conditions=["Customer needs tool assistance"],
+            triggers=["Customer needs tool assistance"],
             description="Journey for testing tool state validation",
         )
 
@@ -281,7 +281,7 @@ class Test_that_chat_journey_state_validates_parameters(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Chat Validation Journey",
-            conditions=["Customer needs chat assistance"],
+            triggers=["Customer needs chat assistance"],
             description="Journey for testing chat state validation",
         )
 
@@ -312,7 +312,7 @@ class Test_that_unknown_parameters_are_caught(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Valid Param Journey",
-            conditions=["Customer needs help"],
+            triggers=["Customer needs help"],
             description="Journey for testing valid parameter validation",
         )
 
@@ -331,7 +331,7 @@ class Test_that_all_journey_state_types_have_validation(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="All States Journey",
-            conditions=["Customer needs comprehensive help"],
+            triggers=["Customer needs comprehensive help"],
             description="Journey for testing all state types",
         )
 
@@ -369,7 +369,7 @@ class Test_that_valid_parameters_still_work_after_validation_added(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Valid Usage Journey",
-            conditions=["Customer needs help"],
+            triggers=["Customer needs help"],
             description="Journey for testing valid parameter usage",
         )
 
@@ -395,7 +395,7 @@ class Test_that_valid_parameters_still_work_after_validation_added(SDKTest):
         # Test valid journey transition from initial state (second branch)
         sub_journey = await self.agent.create_journey(
             title="Sub Journey",
-            conditions=[],
+            triggers=[],
             description="Sub journey for testing",
         )
 
@@ -434,13 +434,13 @@ class Test_that_journey_transitions_reject_invalid_parameters(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Journey Param Journey",
-            conditions=["Customer needs help"],
+            triggers=["Customer needs help"],
             description="Journey for testing journey parameter validation",
         )
 
         self.sub_journey = await self.agent.create_journey(
             title="Sub Journey",
-            conditions=[],
+            triggers=[],
             description="Sub journey for testing",
         )
 
@@ -522,7 +522,7 @@ class Test_that_tool_instruction_parameter_validation_works_correctly(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Tool Instruction Journey",
-            conditions=["Customer needs tool help"],
+            triggers=["Customer needs tool help"],
             description="Journey for testing tool_instruction validation",
         )
 
@@ -588,7 +588,7 @@ class Test_that_fork_state_condition_validation_is_comprehensive(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Fork Condition Journey",
-            conditions=["Customer needs routing"],
+            triggers=["Customer needs routing"],
             description="Journey for testing fork condition validation",
         )
 
@@ -606,7 +606,7 @@ class Test_that_fork_state_condition_validation_is_comprehensive(SDKTest):
 
         self.sub_journey = await self.agent.create_journey(
             title="Sub Journey",
-            conditions=[],
+            triggers=[],
             description="Sub journey for fork testing",
         )
 

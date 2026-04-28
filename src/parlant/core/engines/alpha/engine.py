@@ -1430,7 +1430,7 @@ class AlphaEngine(Engine):
     ) -> list[Journey]:
         # We consider a journey to be activated if either:
         # 1. Journey was activated before and match return a journey path with a step that is not None.
-        # 2. The journey’s conditions match any of the currently matched guideline IDs.
+        # 2. The journey’s triggers match any of the currently matched guideline IDs.
         journeys_with_paths: set[JourneyId] = {
             id
             for id, j in context.state.journey_paths.items()
@@ -1445,15 +1445,15 @@ class AlphaEngine(Engine):
             and m.metadata.get("step_selection_journey_id") in journeys_with_paths
         }
 
-        active_journeys_by_conditions = [
+        active_journeys_by_triggers = [
             j
             for j in all_journeys
-            if set(j.conditions).intersection({m.guideline.id for m in matches})
+            if set(j.triggers).intersection({m.guideline.id for m in matches})
         ]
 
         active_journeys = list(
             set(
-                active_journeys_by_conditions
+                active_journeys_by_triggers
                 + [j for j in all_journeys if j.id in active_journey_ids_by_path]
             )
         )
@@ -1467,11 +1467,11 @@ class AlphaEngine(Engine):
     ) -> list[Journey]:
         # We consider a journey to be activated if either:
         # 1. Match return a journey path with a step that is not None for journey that .
-        # 2. The journey’s conditions match any of the currently matched guideline IDs.
-        active_journeys_by_conditions = [
+        # 2. The journey’s triggers match any of the currently matched guideline IDs.
+        active_journeys_by_triggers = [
             j
             for j in all_journeys
-            if set(j.conditions).intersection({m.guideline.id for m in matches})
+            if set(j.triggers).intersection({m.guideline.id for m in matches})
         ]
 
         active_journey_ids_by_path = {
@@ -1483,7 +1483,7 @@ class AlphaEngine(Engine):
 
         active_journeys = list(
             set(
-                active_journeys_by_conditions
+                active_journeys_by_triggers
                 + [j for j in all_journeys if j.id in active_journey_ids_by_path]
             )
         )
@@ -1752,14 +1752,14 @@ class AlphaEngine(Engine):
         )
 
         if activated_low_prob_related_ids:
-            journey_conditions = list(
-                chain.from_iterable([j.conditions for j in activated_journeys if j.conditions])
+            journey_triggers = list(
+                chain.from_iterable([j.triggers for j in activated_journeys if j.triggers])
             )
 
             additional_matching_guidelines = [
                 g
                 for id, g in all_stored_guidelines.items()
-                if id in activated_low_prob_related_ids or id in journey_conditions
+                if id in activated_low_prob_related_ids or id in journey_triggers
             ]
 
             with self._tracer.span(

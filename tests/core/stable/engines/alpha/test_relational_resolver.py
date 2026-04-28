@@ -130,13 +130,13 @@ async def test_that_relational_resolver_prioritizes_between_journey_nodes(
     j1 = await journey_store.create_journey(
         title="Journey 1",
         description="Description for Journey 1",
-        conditions=[j1_condition.id],
+        triggers=[j1_condition.id],
     )
 
     j2 = await journey_store.create_journey(
         title="Journey 2",
         description="Description for Journey 2",
-        conditions=[j2_condition.id],
+        triggers=[j2_condition.id],
     )
 
     j1_guidelines = await container[JourneyGuidelineProjection].project_journey_to_guidelines(j1.id)
@@ -195,7 +195,7 @@ async def test_that_relational_resolver_prioritizes_guideline_over_journey(
     journey = await journey_store.create_journey(
         title="Drink Recommendation Journey",
         description="Recommend Coca-Cola to the customer",
-        conditions=[journey_condition.id],
+        triggers=[journey_condition.id],
     )
 
     # Add nodes to the journey to create a graph
@@ -272,7 +272,7 @@ async def test_that_relational_resolver_prioritizes_journey_over_guideline(
     journey = await journey_store.create_journey(
         title="Drink Recommendation Journey",
         description="Recommend Pepsi to the customer",
-        conditions=[journey_condition.id],
+        triggers=[journey_condition.id],
     )
 
     # Add nodes to the journey to create a graph
@@ -362,7 +362,7 @@ async def test_that_relational_resolver_filters_journey_dependent_guideline_when
     journey = await journey_store.create_journey(
         title="Drink Recommendation Journey",
         description="Recommend Coca-Cola to the customer",
-        conditions=[journey_condition.id],
+        triggers=[journey_condition.id],
     )
 
     # Create guideline X that depends on the journey
@@ -476,12 +476,12 @@ async def test_that_relational_resolver_does_not_ignore_deprioritized_journey_no
     prioritized_journey = await journey_store.create_journey(
         title="Journey A",
         description="High priority journey",
-        conditions=[prioritized_condition.id],
+        triggers=[prioritized_condition.id],
     )
     deprioritized_journey = await journey_store.create_journey(
         title="Journey B",
         description="Lower priority journey",
-        conditions=[deprioritized_condition.id],
+        triggers=[deprioritized_condition.id],
     )
 
     await relationship_store.create_relationship(
@@ -915,7 +915,7 @@ async def test_that_relational_resolver_filters_out_journey_nodes_with_unmet_jou
     source_journey = await journey_store.create_journey(
         title="Clarify Transaction Type",
         description="Journey for asking if it's repeat or new transaction",
-        conditions=[source_condition.id],
+        triggers=[source_condition.id],
     )
 
     guideline = await guideline_store.create_guideline(
@@ -971,13 +971,13 @@ async def test_that_relational_resolver_filters_out_journey_nodes_with_unmet_jou
     source_journey = await journey_store.create_journey(
         title="Clarify Transaction Type",
         description="Journey for asking if it's repeat or new transaction",
-        conditions=[source_condition.id],
+        triggers=[source_condition.id],
     )
 
     target_journey = await journey_store.create_journey(
         title="Validate Account",
         description="Journey for validating account",
-        conditions=[],
+        triggers=[],
     )
 
     source_journey_guidelines = await projection.project_journey_to_guidelines(source_journey.id)
@@ -1024,12 +1024,12 @@ async def test_that_relational_resolver_filters_dependent_guidelines_by_journey_
     enabled_journey = await journey_store.create_journey(
         title="First Journey",
         description="Description",
-        conditions=[],
+        triggers=[],
     )
     disabled_journey = await journey_store.create_journey(
         title="Second Journey",
         description="Description",
-        conditions=[],
+        triggers=[],
     )
 
     enabled_journey_tagged_guideline = await guideline_store.create_guideline(
@@ -1348,14 +1348,14 @@ async def test_that_relational_resolver_filters_journeys_by_priority_keeping_onl
     j1 = await journey_store.create_journey(
         title="Journey 1",
         description="High priority journey",
-        conditions=[j1_condition.id],
+        triggers=[j1_condition.id],
         priority=2,
     )
 
     j2 = await journey_store.create_journey(
         title="Journey 2",
         description="Default priority journey",
-        conditions=[j2_condition.id],
+        triggers=[j2_condition.id],
         priority=0,
     )
 
@@ -1413,7 +1413,7 @@ async def test_that_relational_resolver_filters_mixed_entities_by_priority_with_
     journey = await journey_store.create_journey(
         title="Drink Recommendation Journey",
         description="Recommend soda",
-        conditions=[journey_condition.id],
+        triggers=[journey_condition.id],
         priority=0,
     )
 
@@ -1470,7 +1470,7 @@ async def test_that_relational_resolver_filters_mixed_entities_by_priority_with_
     journey = await journey_store.create_journey(
         title="Drink Recommendation Journey",
         description="Recommend soda",
-        conditions=[journey_condition.id],
+        triggers=[journey_condition.id],
         priority=1,
     )
 
@@ -1807,7 +1807,7 @@ async def test_that_journey_tag_priority_deprioritizes_all_guidelines_of_target_
     journey = await journey_store.create_journey(
         title="J",
         description="A journey",
-        conditions=[j_cond.id],
+        triggers=[j_cond.id],
     )
 
     # Tag condition guideline with its journey tag (as the real projection does)
@@ -1856,8 +1856,8 @@ async def test_that_journey_tag_priority_deprioritizes_target_journey_tag(
     journey_store = container[JourneyStore]
     resolver = container[RelationalResolver]
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
-    j2 = await journey_store.create_journey(title="J2", description="Journey 2", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
+    j2 = await journey_store.create_journey(title="J2", description="Journey 2", triggers=[])
 
     j1_g = await guideline_store.create_guideline(
         condition="a",
@@ -1925,7 +1925,7 @@ async def test_that_tag_priority_deprioritizes_target_journey(
     journey = await journey_store.create_journey(
         title="J",
         description="A journey",
-        conditions=[],
+        triggers=[],
     )
 
     j_g = await guideline_store.create_guideline(
@@ -2069,7 +2069,7 @@ async def test_that_journey_tag_dependency_deactivates_node_guidelines_when_targ
 
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action", tags=[t1.id])
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="b",
         action="j1 action",
@@ -2123,7 +2123,7 @@ async def test_that_tag_dependency_deactivates_tagged_guidelines_when_target_jou
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action", tags=[t1.id])
     g_extra = await guideline_store.create_guideline(condition="b", action="extra action")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
 
     # t1 depends on j1
     await relationship_store.create_relationship(
@@ -2163,8 +2163,8 @@ async def test_that_journey_tag_dependency_deactivates_node_guidelines_when_targ
     journey_store = container[JourneyStore]
     resolver = container[RelationalResolver]
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
-    j2 = await journey_store.create_journey(title="J2", description="Journey 2", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
+    j2 = await journey_store.create_journey(title="J2", description="Journey 2", triggers=[])
 
     j1_g = await guideline_store.create_guideline(
         condition="a",
@@ -2310,7 +2310,7 @@ async def test_that_guideline_depending_on_tag_survives_when_at_least_one_tagged
 
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="b",
         action="j1 action",
@@ -2318,7 +2318,7 @@ async def test_that_guideline_depending_on_tag_survives_when_at_least_one_tagged
         tags=[t1.id],
     )
 
-    j2 = await journey_store.create_journey(title="J2", description="Journey 2", conditions=[])
+    j2 = await journey_store.create_journey(title="J2", description="Journey 2", triggers=[])
     j2_g = await guideline_store.create_guideline(
         condition="c",
         action="j2 action",
@@ -2369,7 +2369,7 @@ async def test_that_guideline_depending_on_tag_is_filtered_when_no_tagged_journe
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action")
     g_extra = await guideline_store.create_guideline(condition="d", action="extra action")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="b",
         action="j1 action",
@@ -2377,7 +2377,7 @@ async def test_that_guideline_depending_on_tag_is_filtered_when_no_tagged_journe
         tags=[t1.id],
     )
 
-    j2 = await journey_store.create_journey(title="J2", description="Journey 2", conditions=[])
+    j2 = await journey_store.create_journey(title="J2", description="Journey 2", triggers=[])
     j2_g = await guideline_store.create_guideline(
         condition="c",
         action="j2 action",
@@ -2473,7 +2473,7 @@ async def test_that_journey_tag_dependency_survives_when_at_least_one_target_tag
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action", tags=[t1.id])
     g2 = await guideline_store.create_guideline(condition="b", action="g2 action", tags=[t1.id])
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="c",
         action="j1 action",
@@ -2525,7 +2525,7 @@ async def test_that_tag_dependency_survives_when_tagged_journey_is_active_but_ta
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action")
     g2 = await guideline_store.create_guideline(condition="b", action="g2 action", tags=[t1.id])
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="c",
         action="j1 action",
@@ -2680,7 +2680,7 @@ async def test_that_hierarchical_journey_dependency_cascades_when_root_guideline
 
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="b",
         action="j1 action",
@@ -2739,7 +2739,7 @@ async def test_that_hierarchical_journey_dependency_cascades_when_journey_is_not
 
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="b",
         action="j1 action",
@@ -2913,7 +2913,7 @@ async def test_that_hierarchical_tag_journey_tag_dependency_cascades_when_root_t
 
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action", tags=[t1.id])
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="b",
         action="j1 action",
@@ -2976,7 +2976,7 @@ async def test_that_hierarchical_tag_journey_tag_dependency_cascades_when_journe
 
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action", tags=[t1.id])
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="b",
         action="j1 action",
@@ -3043,7 +3043,7 @@ async def test_that_hierarchical_guideline_tag_journey_dependency_cascades_when_
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action")
     g_t1 = await guideline_store.create_guideline(condition="b", action="t1 action", tags=[t1.id])
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="c",
         action="j1 action",
@@ -3107,7 +3107,7 @@ async def test_that_hierarchical_guideline_tag_journey_dependency_cascades_when_
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action")
     g_t1 = await guideline_store.create_guideline(condition="b", action="t1 action", tags=[t1.id])
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="c",
         action="j1 action",
@@ -3169,7 +3169,7 @@ async def test_that_condition_guideline_survives_when_its_journey_is_deprioritiz
     journey_store = container[JourneyStore]
     resolver = container[RelationalResolver]
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
 
     j1_cond = await guideline_store.create_guideline(
         condition="customer is interested",
@@ -3390,7 +3390,7 @@ async def test_that_custom_tagged_journey_deprioritizes_guidelines_with_lower_pr
     t1 = await tag_store.create_tag(name="t1")
     t2 = await tag_store.create_tag(name="t2")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
 
     # Node guideline carrying the journey's custom tag
     j1_node = await guideline_store.create_guideline(
@@ -3446,7 +3446,7 @@ async def test_that_higher_priority_tag_deprioritizes_journey_with_matching_cust
     t1 = await tag_store.create_tag(name="t1")
     t2 = await tag_store.create_tag(name="t2")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
 
     # Node guideline carrying the journey's custom tag
     j1_node = await guideline_store.create_guideline(
@@ -3501,7 +3501,7 @@ async def test_that_custom_tagged_journey_dependency_deactivates_node_guidelines
     t1 = await tag_store.create_tag(name="t1")
     t2 = await tag_store.create_tag(name="t2")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
 
     # Node guideline carrying the journey's custom tag
     j1_node = await guideline_store.create_guideline(
@@ -3558,7 +3558,7 @@ async def test_that_tag_dependency_on_custom_tagged_journey_deactivates_when_jou
     t1 = await tag_store.create_tag(name="t1")
     t2 = await tag_store.create_tag(name="t2")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
 
     # Node guideline carrying the journey's custom tag (will NOT be matched)
     j1_node = await guideline_store.create_guideline(
@@ -3617,13 +3617,13 @@ async def test_that_relational_resolver_deprioritizes_journey_scoped_guideline_w
     j1 = await journey_store.create_journey(
         title="Journey 1",
         description="",
-        conditions=[j1_condition.id],
+        triggers=[j1_condition.id],
     )
 
     j2 = await journey_store.create_journey(
         title="Journey 2",
         description="",
-        conditions=[j2_condition.id],
+        triggers=[j2_condition.id],
     )
 
     # Create scoped guidelines for each journey (persisted, no journey_node metadata).
@@ -3710,7 +3710,7 @@ async def test_that_relational_resolver_deprioritizes_journey_scoped_guideline_w
     j1 = await journey_store.create_journey(
         title="Journey 1",
         description="",
-        conditions=[j1_condition.id],
+        triggers=[j1_condition.id],
     )
 
     # Journey-scoped guideline (persisted, no journey_node metadata)
@@ -5027,14 +5027,14 @@ async def test_that_dependency_any_group_with_journey_targets_survives_when_one_
 
     g1 = await guideline_store.create_guideline(condition="a", action="g1 action")
 
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="b",
         action="j1 action",
         metadata={"journey_node": {"journey_id": j1.id}},
     )
 
-    j2 = await journey_store.create_journey(title="J2", description="Journey 2", conditions=[])
+    j2 = await journey_store.create_journey(title="J2", description="Journey 2", triggers=[])
     j2_g = await guideline_store.create_guideline(
         condition="c",
         action="j2 action",
@@ -5799,7 +5799,7 @@ async def test_that_journey_tag_guideline_journey_tag_dependency_cascades(
     resolver = container[RelationalResolver]
 
     # Create J1 (active) and its node guideline
-    j1 = await journey_store.create_journey(title="J1", description="Journey 1", conditions=[])
+    j1 = await journey_store.create_journey(title="J1", description="Journey 1", triggers=[])
     j1_g = await guideline_store.create_guideline(
         condition="a",
         action="j1 action",
@@ -5810,7 +5810,7 @@ async def test_that_journey_tag_guideline_journey_tag_dependency_cascades(
     g = await guideline_store.create_guideline(condition="b", action="bridge action")
 
     # Create J2 (NOT active — won't be in journeys list)
-    j2 = await journey_store.create_journey(title="J2", description="Journey 2", conditions=[])
+    j2 = await journey_store.create_journey(title="J2", description="Journey 2", triggers=[])
 
     # J1 tag depends on G
     await relationship_store.create_relationship(

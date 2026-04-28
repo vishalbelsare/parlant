@@ -11,6 +11,7 @@ All notable changes to Parlant will be documented here.
 
 ### Changed
 
+- Rename journey `conditions` to `triggers` throughout the codebase, REST API, CLI, and SDKs to better reflect their role as activation signals. The REST API field, query parameter, and request bodies use `triggers` (no aliases). The Python SDK `Server.create_journey(...)` keeps `conditions=` as a deprecated keyword that emits a `DeprecationWarning`; passing both `triggers=` and `conditions=` raises an error. Existing journey records are migrated automatically by `parlant-prepare-migration` from the `journey_conditions` collection (with a `condition` field) to a new `journey_triggers` collection (with a `trigger` field). LLM prompt strings that include "Journey activation condition" are intentionally preserved
 - Rename SDK callback `on_match` to `on_selected` on guidelines and journey state transitions to reflect that it fires post-resolution, when the entity is selected for message generation; `EngineHooks.on_guideline_match_handlers` and `on_journey_match_handlers` are renamed to `on_guideline_selected_handlers` and `on_journey_selected_handlers` accordingly
 - Standardize guideline matcher log vocabulary: `"Activated"` → `"Matched"`, `"Skipped"` → `"Not matched"`, and `"Not applied"` → `"Unapplied"`
 - Standardize relational resolver log vocabulary: `"Skipped: ... deactivated due to ..."` → `"Dropped (<reason>): ..."` with reasons `lower priority`, `unmet dependency`, `dependency on dropped entity`, `deprioritized by guideline`, and `deprioritized by journey`
