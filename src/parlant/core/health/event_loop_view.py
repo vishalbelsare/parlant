@@ -17,7 +17,7 @@
 from typing import Mapping, Sequence
 
 from parlant.core.event_loop_monitor import EventLoopHealth, EventLoopMonitor
-from parlant.core.health_reporter import (
+from parlant.core.health.reporter import (
     Criticality,
     HealthReport,
     OverallHealth,

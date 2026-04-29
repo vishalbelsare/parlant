@@ -31,7 +31,7 @@ from starlette.routing import Match
 from lagom import Container
 
 from parlant.adapters.loggers.websocket import WebSocketLogger
-from parlant.core.health_reporter import HealthReporter
+from parlant.core.health import HealthReporter
 from parlant.api import agents, capabilities
 from parlant.api import evaluations
 from parlant.api import journeys

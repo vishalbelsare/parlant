@@ -22,7 +22,7 @@ breakdown. The view's status is the worst across all observed schemas.
 from collections import Counter
 from typing import Any, Mapping, Sequence
 
-from parlant.core.health_reporter import (
+from parlant.core.health.reporter import (
     Criticality,
     HealthReport,
     OverallHealth,
@@ -140,15 +140,9 @@ class NLPHealthView:
         }, status
 
     def _classify(self, *, success_rate: float, p95_ms: float) -> OverallHealth:
-        if (
-            success_rate < self._unhealthy_below_success_rate
-            or p95_ms >= self._unhealthy_p95_ms
-        ):
+        if success_rate < self._unhealthy_below_success_rate or p95_ms >= self._unhealthy_p95_ms:
             return OverallHealth.UNHEALTHY
-        if (
-            success_rate < self._degraded_below_success_rate
-            or p95_ms >= self._degraded_p95_ms
-        ):
+        if success_rate < self._degraded_below_success_rate or p95_ms >= self._degraded_p95_ms:
             return OverallHealth.DEGRADED
         return OverallHealth.HEALTHY
 

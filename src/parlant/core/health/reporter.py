@@ -97,14 +97,30 @@ class HealthView(Protocol):
     ) -> ViewSnapshot: ...
 
 
-class HealthReporter:
-    """Collects health reports and renders them through registered views."""
+_DEFAULT_SNAPSHOT_CACHE_TTL = timedelta(minutes=5)
 
-    def __init__(self) -> None:
+
+class HealthReporter:
+    """Collects health reports and renders them through registered views.
+
+    ``snapshot()`` results are cached for ``snapshot_cache_ttl`` so that
+    high-frequency probes against ``/healthz`` don't pay the rendering
+    cost on every call. Reports continue to be recorded during the cache
+    window — only the rollup computation is deferred.
+    """
+
+    def __init__(
+        self,
+        *,
+        snapshot_cache_ttl: timedelta = _DEFAULT_SNAPSHOT_CACHE_TTL,
+    ) -> None:
         self._retention: dict[str, ReportRetention] = {}
         self._buffers: dict[str, deque[HealthReport]] = defaultdict(deque)
         self._views: list[HealthView] = []
         self._lock = Lock()
+        self._snapshot_cache_ttl = snapshot_cache_ttl
+        self._cached_snapshot: dict[str, Any] | None = None
+        self._cached_snapshot_at: datetime | None = None
 
     def configure_retention(self, kind: str, retention: ReportRetention) -> None:
         """Configure how long and how many reports of ``kind`` to retain."""
@@ -138,8 +154,23 @@ class HealthReporter:
             self._prune(kind, buffer)
 
     def snapshot(self) -> dict[str, Any]:
-        """Render every view and compute the overall worst-of-critical status."""
+        """Render every view and compute the overall worst-of-critical status.
+
+        Results are cached for ``snapshot_cache_ttl``. While the cached
+        snapshot is fresh, this method returns it without touching the
+        report buffers, so repeated polling of ``/healthz`` does not
+        impose rollup cost on the running process.
+        """
+        now = datetime.now(timezone.utc)
+
         with self._lock:
+            if (
+                self._cached_snapshot is not None
+                and self._cached_snapshot_at is not None
+                and now - self._cached_snapshot_at < self._snapshot_cache_ttl
+            ):
+                return self._cached_snapshot
+
             self._prune_all_for_age()
             views = list(self._views)
             buffers_by_view: list[tuple[HealthView, dict[str, list[HealthReport]]]] = []
@@ -156,7 +187,13 @@ class HealthReporter:
                 if _RANK[rendered.status] > _RANK[overall]:
                     overall = rendered.status
 
-        return {"status": overall.value, "checks": checks}
+        result = {"status": overall.value, "checks": checks}
+
+        with self._lock:
+            self._cached_snapshot = result
+            self._cached_snapshot_at = now
+
+        return result
 
     def _prune(self, kind: str, buffer: deque[HealthReport]) -> None:
         retention = self._retention[kind]

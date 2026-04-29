@@ -60,6 +60,7 @@ from parlant.core.context_variables import (
 )
 from parlant.core.customers import Customer, CustomerId, CustomerStore
 from parlant.core.engines.alpha.hooks import EngineHook, EngineHooks
+from parlant.core.health import HealthReporter
 from parlant.core.engines.alpha.engine_context import EngineContext
 from parlant.core.engines.alpha.prompt_builder import PromptBuilder
 from parlant.core.glossary import GlossaryStore, Term
@@ -175,7 +176,10 @@ class _TestLogger(Logger):
 
 async def nlp_test(context: str, condition: str) -> bool:
     schematic_generator = GPT_4o[NLPTestSchema](
-        logger=_TestLogger(), tracer=LocalTracer(), meter=LocalMeter(_TestLogger())
+        logger=_TestLogger(),
+        tracer=LocalTracer(),
+        meter=LocalMeter(_TestLogger()),
+        health_reporter=HealthReporter(),
     )
 
     inference = await schematic_generator.generate(

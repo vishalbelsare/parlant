@@ -60,6 +60,7 @@ from parlant.core.nlp.moderation import (
     ModerationService,
     NoModeration,
 )
+from parlant.core.health import HealthReporter
 
 
 NOVITA_BASE_URL = "https://api.novita.ai/openai"
@@ -81,14 +82,13 @@ class NovitaSchematicGenerator(BaseSchematicGenerator[T]):
     supported_novita_params = ["temperature", "logit_bias", "max_tokens"]
     supported_hints = supported_novita_params + ["strict"]
 
-    def __init__(
-        self,
+    def __init__(self,
         model_name: str,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
-        super().__init__(logger=logger, tracer=tracer, meter=meter, model_name=model_name)
+        super().__init__(logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter, model_name=model_name)
 
         self._client = AsyncClient(
             base_url=NOVITA_BASE_URL,
@@ -207,9 +207,9 @@ class NovitaSchematicGenerator(BaseSchematicGenerator[T]):
 
 
 class Novita_KimiK2(NovitaSchematicGenerator[T]):
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         super().__init__(
-            model_name="moonshotai/kimi-k2.5", logger=logger, tracer=tracer, meter=meter
+            model_name="moonshotai/kimi-k2.5", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter
         )
 
     @property
@@ -219,9 +219,9 @@ class Novita_KimiK2(NovitaSchematicGenerator[T]):
 
 
 class Novita_DeepSeekV3(NovitaSchematicGenerator[T]):
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         super().__init__(
-            model_name="deepseek/deepseek-v3.2", logger=logger, tracer=tracer, meter=meter
+            model_name="deepseek/deepseek-v3.2", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter
         )
 
     @property
@@ -231,8 +231,8 @@ class Novita_DeepSeekV3(NovitaSchematicGenerator[T]):
 
 
 class Novita_GLM5(NovitaSchematicGenerator[T]):
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
-        super().__init__(model_name="zai-org/glm-5.1", logger=logger, tracer=tracer, meter=meter)
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
+        super().__init__(model_name="zai-org/glm-5.1", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter)
 
     @property
     @override
@@ -241,9 +241,9 @@ class Novita_GLM5(NovitaSchematicGenerator[T]):
 
 
 class Novita_MinimaxM2(NovitaSchematicGenerator[T]):
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         super().__init__(
-            model_name="minimax/minimax-m2.7", logger=logger, tracer=tracer, meter=meter
+            model_name="minimax/minimax-m2.7", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter
         )
 
     @property
@@ -255,12 +255,12 @@ class Novita_MinimaxM2(NovitaSchematicGenerator[T]):
 class CustomNovitaSchematicGenerator(NovitaSchematicGenerator[T]):
     """Generic Novita AI generator that accepts any model name."""
 
-    def __init__(self, model_name: str, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, model_name: str, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         super().__init__(
             model_name=model_name,
             logger=logger,
             tracer=tracer,
-            meter=meter,
+            meter=meter, health_reporter=health_reporter,
         )
 
     @property
@@ -289,14 +289,13 @@ class NovitaStreamingTextGenerator(BaseStreamingTextGenerator):
 
     supported_novita_params = ["temperature", "max_tokens"]
 
-    def __init__(
-        self,
+    def __init__(self,
         model_name: str,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
-        super().__init__(logger=logger, tracer=tracer, meter=meter, model_name=model_name)
+        super().__init__(logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter, model_name=model_name)
 
         self._client = AsyncClient(
             base_url=NOVITA_BASE_URL,
@@ -420,16 +419,17 @@ Please set NOVITA_API_KEY in your environment before running Parlant.
 
         return None
 
-    def __init__(
-        self,
+    def __init__(self,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
         self.model_name = os.environ.get("NOVITA_MODEL", NOVITA_DEFAULT_MODEL)
         self._logger = logger
         self._tracer = tracer
         self._meter = meter
+
+        self._health_reporter = health_reporter
         self._logger.info(f"Initialized NovitaService with model: {self.model_name}")
 
     @property
@@ -446,16 +446,17 @@ Please set NOVITA_API_KEY in your environment before running Parlant.
             logger=self._logger,
             tracer=self._tracer,
             meter=self._meter,
+                    health_reporter=self._health_reporter,
         )
 
     def _get_specialized_generator_class(
         self,
         model_name: str,
         schema_type: type[T],
-    ) -> Callable[[Logger, Tracer, Meter], NovitaSchematicGenerator[T]] | None:
+    ) -> Callable[[Logger, Tracer, Meter, HealthReporter], NovitaSchematicGenerator[T]] | None:
         """Returns the specialized generator class for known models, or None for custom models."""
         model_to_class: dict[
-            str, Callable[[Logger, Tracer, Meter], NovitaSchematicGenerator[T]]
+            str, Callable[[Logger, Tracer, Meter, HealthReporter], NovitaSchematicGenerator[T]]
         ] = {
             "moonshotai/kimi-k2.5": Novita_KimiK2[schema_type],  # type: ignore
             "deepseek/deepseek-v3.2": Novita_DeepSeekV3[schema_type],  # type: ignore
@@ -473,7 +474,7 @@ Please set NOVITA_API_KEY in your environment before running Parlant.
 
         if specialized_class:
             self._logger.debug(f"Using specialized generator for model: {self.model_name}")
-            return specialized_class(self._logger, self._tracer, self._meter)
+            return specialized_class(self._logger, self._tracer, self._meter, self._health_reporter)
         else:
             self._logger.debug(f"Using custom generator for model: {self.model_name}")
             return CustomNovitaSchematicGenerator[t](  # type: ignore
@@ -481,11 +482,12 @@ Please set NOVITA_API_KEY in your environment before running Parlant.
                 logger=self._logger,
                 tracer=self._tracer,
                 meter=self._meter,
+                    health_reporter=self._health_reporter,
             )
 
     @override
     async def get_embedder(self, hints: EmbedderHints = {}) -> Embedder:
-        return JinaAIEmbedder(self._logger, self._tracer, self._meter)
+        return JinaAIEmbedder(self._logger, self._tracer, self._meter, self._health_reporter)
 
     @override
     async def get_moderation_service(self) -> ModerationService:

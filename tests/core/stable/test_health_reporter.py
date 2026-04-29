@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Mapping, Sequence
 
-from parlant.core.health_reporter import (
+from parlant.core.health import (
     Criticality,
     HealthReport,
     HealthReporter,
@@ -87,7 +87,9 @@ async def test_that_a_view_does_not_see_kinds_it_did_not_declare() -> None:
 
 async def test_that_reports_older_than_the_window_are_pruned_on_next_write() -> None:
     reporter = HealthReporter()
-    reporter.configure_retention("k", ReportRetention(window=timedelta(milliseconds=50), max_count=1000))
+    reporter.configure_retention(
+        "k", ReportRetention(window=timedelta(milliseconds=50), max_count=1000)
+    )
     view = _RecordingView(name="v", kinds=("k",))
     reporter.register_view(view)
 
@@ -138,7 +140,7 @@ async def test_that_each_kind_has_independent_retention() -> None:
 
 
 async def test_that_overall_status_is_worst_of_critical_views() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(snapshot_cache_ttl=timedelta(0))
     reporter.configure_retention("k", _retention())
 
     healthy = _RecordingView(name="healthy", kinds=("k",), fixed_status=OverallHealth.HEALTHY)
@@ -153,6 +155,44 @@ async def test_that_overall_status_is_worst_of_critical_views() -> None:
     reporter.register_view(unhealthy)
     snapshot = reporter.snapshot()
     assert snapshot["status"] == "unhealthy"
+
+
+async def test_that_snapshot_is_cached_within_the_cache_ttl() -> None:
+    reporter = HealthReporter(snapshot_cache_ttl=timedelta(seconds=60))
+    reporter.configure_retention("k", _retention())
+    view = _RecordingView(name="v", kinds=("k",), fixed_status=OverallHealth.HEALTHY)
+    reporter.register_view(view)
+
+    reporter.report("k", {"i": 1})
+    first = reporter.snapshot()
+    first_render_count = sum(len(v) for v in view.last_seen.values())
+
+    # A second report and a re-fetch within the cache window must NOT trigger
+    # a re-render, and the cached body must be returned verbatim.
+    reporter.report("k", {"i": 2})
+    second = reporter.snapshot()
+    second_render_count = sum(len(v) for v in view.last_seen.values())
+
+    assert second is first
+    assert second_render_count == first_render_count
+
+
+async def test_that_snapshot_recomputes_after_cache_ttl_expires() -> None:
+    reporter = HealthReporter(snapshot_cache_ttl=timedelta(milliseconds=50))
+    reporter.configure_retention("k", _retention())
+    view = _RecordingView(name="v", kinds=("k",), fixed_status=OverallHealth.HEALTHY)
+    reporter.register_view(view)
+
+    reporter.report("k", {"i": 1})
+    first = reporter.snapshot()
+    assert first["checks"]["v"]["sample_count"] == 1
+
+    reporter.report("k", {"i": 2})
+    await asyncio.sleep(0.12)
+
+    second = reporter.snapshot()
+    assert second is not first
+    assert second["checks"]["v"]["sample_count"] == 2
 
 
 async def test_that_informational_views_appear_in_body_but_do_not_affect_overall_status() -> None:
@@ -183,7 +223,9 @@ async def test_that_informational_views_appear_in_body_but_do_not_affect_overall
 
 async def test_that_concurrent_reports_from_many_coroutines_are_all_recorded() -> None:
     reporter = HealthReporter()
-    reporter.configure_retention("k", ReportRetention(window=timedelta(seconds=60), max_count=10_000))
+    reporter.configure_retention(
+        "k", ReportRetention(window=timedelta(seconds=60), max_count=10_000)
+    )
     view = _RecordingView(name="v", kinds=("k",))
     reporter.register_view(view)
 

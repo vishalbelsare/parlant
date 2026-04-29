@@ -112,6 +112,7 @@ from parlant.core.context_variables import (
     ContextVariableStore,
 )
 from parlant.core.emission.event_publisher import EventPublisherFactory
+from parlant.core.health import HealthReporter
 from parlant.core.engines.alpha.guideline_matching.generic.common import (
     format_journey_node_guideline_id,
 )
@@ -343,6 +344,7 @@ class NLPServices:
             container[Logger],
             container[Tracer],
             container[Meter],
+            container[HealthReporter],
         )
 
     @staticmethod
@@ -353,7 +355,7 @@ class NLPServices:
         if error := AzureService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return AzureService(container[Logger], container[Tracer], container[Meter])
+        return AzureService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def openai(container: Container) -> NLPService:
@@ -363,7 +365,7 @@ class NLPServices:
         if error := OpenAIService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return OpenAIService(container[Logger], container[Tracer], container[Meter])
+        return OpenAIService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def anthropic(container: Container) -> NLPService:
@@ -373,7 +375,7 @@ class NLPServices:
         if error := AnthropicService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return AnthropicService(container[Logger], container[Tracer], container[Meter])
+        return AnthropicService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def cerebras(container: Container) -> NLPService:
@@ -383,7 +385,7 @@ class NLPServices:
         if error := CerebrasService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return CerebrasService(container[Logger], container[Tracer], container[Meter])
+        return CerebrasService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def together(container: Container) -> NLPService:
@@ -393,7 +395,7 @@ class NLPServices:
         if error := TogetherService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return TogetherService(container[Logger], container[Tracer], container[Meter])
+        return TogetherService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def gemini(container: Container) -> NLPService:
@@ -403,7 +405,7 @@ class NLPServices:
         if error := GeminiService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return GeminiService(container[Logger], container[Tracer], container[Meter])
+        return GeminiService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def litellm(container: Container) -> NLPService:
@@ -413,7 +415,7 @@ class NLPServices:
         if error := LiteLLMService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        service = LiteLLMService(container[Logger], container[Tracer], container[Meter])
+        service = LiteLLMService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
         # LiteLLMEmbedder takes a model_name: str parameter that lagom cannot
         # auto-resolve. We pre-register the embedder instance in the container
@@ -431,7 +433,7 @@ class NLPServices:
         if error := ModelScopeService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return ModelScopeService(container[Logger], container[Tracer], container[Meter])
+        return ModelScopeService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def vertex(container: Container) -> NLPService:
@@ -444,7 +446,7 @@ class NLPServices:
         if err := VertexAIService.validate_adc():
             raise NLPServiceConfigurationError(err)
 
-        return VertexAIService(container[Logger], container[Tracer], container[Meter])
+        return VertexAIService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def mistral(container: Container) -> NLPService:
@@ -454,7 +456,7 @@ class NLPServices:
         if error := MistralService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return MistralService(container[Logger], container[Tracer], container[Meter])
+        return MistralService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def ollama(container: Container) -> NLPService:
@@ -467,7 +469,7 @@ class NLPServices:
         if err := OllamaService.verify_models():
             raise NLPServiceConfigurationError(err)
 
-        return OllamaService(container[Logger], container[Tracer], container[Meter])
+        return OllamaService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def qwen(container: Container) -> NLPService:
@@ -477,7 +479,7 @@ class NLPServices:
         if error := QwenService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return QwenService(container[Logger], container[Tracer], container[Meter])
+        return QwenService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def deepseek(container: Container) -> NLPService:
@@ -487,7 +489,7 @@ class NLPServices:
         if error := DeepSeekService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return DeepSeekService(container[Logger], container[Tracer], container[Meter])
+        return DeepSeekService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def novita(container: Container) -> NLPService:
@@ -497,7 +499,7 @@ class NLPServices:
         if error := NovitaService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return NovitaService(container[Logger], container[Tracer], container[Meter])
+        return NovitaService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     @staticmethod
     def snowflake(container: Container) -> NLPService:
@@ -507,7 +509,7 @@ class NLPServices:
         if error := SnowflakeCortexService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return SnowflakeCortexService(container[Logger], container[Tracer], container[Meter])
+        return SnowflakeCortexService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
     # @staticmethod
     # def fireworks(container: Container) -> NLPService:
@@ -539,6 +541,7 @@ class NLPServices:
                 c[Logger],
                 c[Tracer],
                 c[Meter],
+                c[HealthReporter],
             )
 
         if container is not None:
@@ -554,7 +557,7 @@ class NLPServices:
         if error := ZhipuService.verify_environment():
             raise NLPServiceConfigurationError(error)
 
-        return ZhipuService(container[Logger], container[Tracer], container[Meter])
+        return ZhipuService(container[Logger], container[Tracer], container[Meter], container[HealthReporter])
 
 
 class _CachedGuidelineEvaluation(TypedDict, total=False):

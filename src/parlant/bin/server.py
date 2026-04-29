@@ -125,16 +125,15 @@ from parlant.core.engines.alpha.perceived_performance_policy import (
 )
 from parlant.core.engines.alpha.planners import NullPlanner, PlannerProvider
 from parlant.core.engines.alpha.relational_resolver import RelationalResolver
-from parlant.core.event_loop_health_view import EventLoopHealthView
 from parlant.core.event_loop_monitor import EventLoopMonitor
-from parlant.core.health_reporter import HealthReporter, ReportRetention
-from parlant.core.nlp.embedding import (
-    set_shared_health_reporter as _embedding_set_shared_health_reporter,
+from parlant.core.health import (
+    NLP_EMBED_KIND,
+    NLP_REQUEST_KIND,
+    EventLoopHealthView,
+    HealthReporter,
+    NLPHealthView,
+    ReportRetention,
 )
-from parlant.core.nlp.generation import (
-    set_shared_health_reporter as _generation_set_shared_health_reporter,
-)
-from parlant.core.nlp.health import NLP_EMBED_KIND, NLP_REQUEST_KIND, NLPHealthView
 from parlant.core.engines.alpha.tool_calling.overlapping_tools_batch import (
     OverlappingToolsBatchSchema,
 )
@@ -321,7 +320,10 @@ def load_nlp_service(
     try:
         module = importlib.import_module(module_path)
         service = getattr(module, class_name)
-        return cast(NLPService, service(LOGGER, container[Tracer], container[Meter]))
+        return cast(
+            NLPService,
+            service(LOGGER, container[Tracer], container[Meter], container[HealthReporter]),
+        )
     except ModuleNotFoundError as exc:
         LOGGER.error(f"Failed to import module: {exc.name}")
         LOGGER.critical(
@@ -349,7 +351,7 @@ def load_aws(container: Container) -> NLPService:
 def load_azure(container: Container) -> NLPService:
     from parlant.adapters.nlp.azure_service import AzureService
 
-    return AzureService(LOGGER, container[Tracer], container[Meter])
+    return AzureService(LOGGER, container[Tracer], container[Meter], container[HealthReporter])
 
 
 def load_cerebras(container: Container) -> NLPService:
@@ -391,7 +393,7 @@ def load_gemini(container: Container) -> NLPService:
 def load_openai(container: Container) -> NLPService:
     from parlant.adapters.nlp.openai_service import OpenAIService
 
-    return OpenAIService(LOGGER, container[Tracer], container[Meter])
+    return OpenAIService(LOGGER, container[Tracer], container[Meter], container[HealthReporter])
 
 
 def load_together(container: Container) -> NLPService:
@@ -695,8 +697,6 @@ async def setup_container() -> AsyncIterator[Container]:
     health_reporter.register_view(NLPHealthView())
     health_reporter.register_view(EventLoopHealthView(c[EventLoopMonitor]))
     c[HealthReporter] = health_reporter
-    _generation_set_shared_health_reporter(health_reporter)
-    _embedding_set_shared_health_reporter(health_reporter)
 
     _define_singleton(c, Application, Application)
 

@@ -26,10 +26,9 @@ from typing_extensions import override
 
 from parlant.core.async_utils import Stopwatch
 from parlant.core.common import Version
-from parlant.core.health_reporter import HealthReporter
+from parlant.core.health import NLP_EMBED_KIND, HealthReporter
 from parlant.core.loggers import Logger
 from parlant.core.meter import DurationHistogram, Meter
-from parlant.core.nlp.health import NLP_EMBED_KIND
 from parlant.core.nlp.tokenization import EstimatingTokenizer, ZeroEstimatingTokenizer
 from parlant.core.persistence.common import ObjectId
 from parlant.core.persistence.document_database import (
@@ -89,15 +88,6 @@ class Embedder(ABC):
 _EMBED_DURATION_HISTOGRAM: DurationHistogram | None = None
 
 
-_SHARED_HEALTH_REPORTER: HealthReporter | None = None
-
-
-def set_shared_health_reporter(reporter: HealthReporter | None) -> None:
-    """Install the process-wide HealthReporter for ``BaseEmbedder`` instances."""
-    global _SHARED_HEALTH_REPORTER
-    _SHARED_HEALTH_REPORTER = reporter
-
-
 class BaseEmbedder(Embedder):
     def __init__(
         self,
@@ -105,11 +95,13 @@ class BaseEmbedder(Embedder):
         tracer: Tracer,
         meter: Meter,
         model_name: str,
+        health_reporter: HealthReporter,
     ) -> None:
         self.logger = logger
         self.tracer = tracer
         self.meter = meter
         self.model_name = model_name
+        self.health_reporter = health_reporter
 
         # LRU cache: checksum -> cache entry
         self._cache: OrderedDict[int, _EmbeddingCacheEntry] = OrderedDict()
@@ -271,11 +263,8 @@ class BaseEmbedder(Embedder):
         success: bool,
         error: BaseException | None,
     ) -> None:
-        reporter = _SHARED_HEALTH_REPORTER
-        if reporter is None:
-            return
         try:
-            reporter.report(
+            self.health_reporter.report(
                 NLP_EMBED_KIND,
                 {
                     "schema": self.__class__.__qualname__,

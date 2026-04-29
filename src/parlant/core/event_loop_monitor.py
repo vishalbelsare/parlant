@@ -74,7 +74,7 @@ class EventLoopMonitor:
         )
     """
 
-    def __init__(self, interval: float = 0.1, window: float = 60.0) -> None:
+    def __init__(self, interval: float = 0.1, window: float = 300.0) -> None:
         self._interval = interval
         self._window = window
         self._window_start: float = 0.0

@@ -415,6 +415,7 @@ class Test_that_external_tool_referenced_by_tool_id_is_called(SDKTest):
             NullPerceivedPerformancePolicy,
             PerceivedPerformancePolicy,
         )
+        from parlant.core.health import HealthReporter
         from parlant.core.loggers import Logger
         from parlant.core.meter import Meter
         from parlant.core.tracer import Tracer
@@ -489,6 +490,7 @@ class Test_that_external_tool_referenced_by_tool_id_is_called(SDKTest):
                 c[Logger],
                 c[Tracer],
                 c[Meter],
+                c[HealthReporter],
                 model_tier=os.environ.get("EMCIE_MODEL_TIER", "jackal"),  # type: ignore
                 model_role=os.environ.get("EMCIE_MODEL_ROLE", "teacher"),  # type: ignore
             ),

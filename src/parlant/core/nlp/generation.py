@@ -21,11 +21,10 @@ from typing_extensions import override
 from parlant.core.async_utils import Stopwatch
 from parlant.core.common import DefaultBaseModel
 from parlant.core.engines.alpha.prompt_builder import PromptBuilder
-from parlant.core.health_reporter import HealthReporter
+from parlant.core.health import NLP_REQUEST_KIND, HealthReporter
 from parlant.core.loggers import Logger
 from parlant.core.meter import DurationHistogram, Meter
 from parlant.core.nlp.generation_info import GenerationInfo, UsageInfo
-from parlant.core.nlp.health import NLP_REQUEST_KIND
 from parlant.core.nlp.tokenization import EstimatingTokenizer
 from parlant.core.tracer import Tracer
 
@@ -106,11 +105,19 @@ _STREAMING_REQUEST_DURATION_HISTOGRAM: DurationHistogram | None = None
 class BaseStreamingTextGenerator(StreamingTextGenerator):
     """Base class for streaming text generators with tracing and metrics."""
 
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, model_name: str) -> None:
+    def __init__(
+        self,
+        logger: Logger,
+        tracer: Tracer,
+        meter: Meter,
+        model_name: str,
+        health_reporter: HealthReporter,
+    ) -> None:
         self.logger = logger
         self.tracer = tracer
         self.meter = meter
         self.model_name = model_name
+        self.health_reporter = health_reporter
 
         global _STREAMING_REQUEST_DURATION_HISTOGRAM
         if _STREAMING_REQUEST_DURATION_HISTOGRAM is None:
@@ -173,7 +180,8 @@ class BaseStreamingTextGenerator(StreamingTextGenerator):
                         "duration": duration,
                     },
                 )
-            except Exception:
+                self._report_health(duration, success=True, error=None)
+            except Exception as exc:
                 duration = start.elapsed
                 self.tracer.add_event(
                     "stream.request_failed",
@@ -182,6 +190,7 @@ class BaseStreamingTextGenerator(StreamingTextGenerator):
                         "duration": duration,
                     },
                 )
+                self._report_health(duration, success=False, error=exc)
                 raise
 
         def info_getter() -> GenerationInfo:
@@ -199,6 +208,27 @@ class BaseStreamingTextGenerator(StreamingTextGenerator):
             stream=wrapped_stream(),
             info_getter=info_getter,
         )
+
+    def _report_health(
+        self,
+        duration_seconds: float,
+        *,
+        success: bool,
+        error: BaseException | None,
+    ) -> None:
+        try:
+            self.health_reporter.report(
+                NLP_REQUEST_KIND,
+                {
+                    "schema": "StreamingText",
+                    "model": self.model_name,
+                    "success": success,
+                    "latency_ms": duration_seconds * 1000.0,
+                    "error_class": type(error).__name__ if error is not None else None,
+                },
+            )
+        except Exception:
+            self.logger.debug("Failed to report NLP health for streaming request")
 
 
 # ============================================================================
@@ -256,16 +286,6 @@ class SchematicGenerator(ABC, Generic[T]):
 _REQUEST_DURATION_HISTOGRAM: DurationHistogram | None = None
 
 
-_SHARED_HEALTH_REPORTER: HealthReporter | None = None
-
-
-def set_shared_health_reporter(reporter: HealthReporter | None) -> None:
-    """Install the process-wide HealthReporter that ``BaseSchematicGenerator``
-    instances will report to. Called once during server startup."""
-    global _SHARED_HEALTH_REPORTER
-    _SHARED_HEALTH_REPORTER = reporter
-
-
 class BaseSchematicGenerator(SchematicGenerator[T]):
     def __init__(
         self,
@@ -273,11 +293,13 @@ class BaseSchematicGenerator(SchematicGenerator[T]):
         tracer: Tracer,
         meter: Meter,
         model_name: str,
+        health_reporter: HealthReporter,
     ) -> None:
         self.logger = logger
         self.tracer = tracer
         self.meter = meter
         self.model_name = model_name
+        self.health_reporter = health_reporter
 
         global _REQUEST_DURATION_HISTOGRAM
         if _REQUEST_DURATION_HISTOGRAM is None:
@@ -343,11 +365,8 @@ class BaseSchematicGenerator(SchematicGenerator[T]):
         success: bool,
         error: BaseException | None,
     ) -> None:
-        reporter = _SHARED_HEALTH_REPORTER
-        if reporter is None:
-            return
         try:
-            reporter.report(
+            self.health_reporter.report(
                 NLP_REQUEST_KIND,
                 {
                     "schema": self.schema.__name__,

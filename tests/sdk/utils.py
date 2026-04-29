@@ -22,6 +22,7 @@ from parlant.client import AsyncParlantClient as Client
 from parlant.client.types.event import Event as ClientEvent
 
 from parlant.adapters.nlp.emcie_service import EmcieService
+from parlant.core.health import HealthReporter
 from parlant.core.loggers import Logger
 from parlant.core.meter import Meter
 from parlant.core.sessions import Session
@@ -262,6 +263,7 @@ class SDKTest:
                 c[Logger],
                 c[Tracer],
                 c[Meter],
+                c[HealthReporter],
                 model_tier=os.environ.get("EMCIE_MODEL_TIER", "jackal"),  # type: ignore
                 model_role=os.environ.get("EMCIE_MODEL_ROLE", "teacher"),  # type: ignore
             ),

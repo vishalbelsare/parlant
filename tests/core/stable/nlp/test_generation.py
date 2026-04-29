@@ -28,6 +28,7 @@ from parlant.core.engines.alpha.prompt_builder import (
     SectionStatus,
 )
 from parlant.core.loggers import Logger
+from parlant.core.health import HealthReporter
 from parlant.core.meter import Meter
 from parlant.core.nlp.embedding import EmbeddingResult
 from parlant.core.nlp.generation import (
@@ -505,7 +506,13 @@ class TestableBaseStreamingTextGenerator(BaseStreamingTextGenerator):
         chunks: list[str],
         should_fail: bool = False,
     ) -> None:
-        super().__init__(logger=logger, tracer=tracer, meter=meter, model_name="test-model")
+        super().__init__(
+            logger=logger,
+            tracer=tracer,
+            meter=meter,
+            model_name="test-model",
+            health_reporter=HealthReporter(),
+        )
         self._chunks = chunks
         self._should_fail = should_fail
 
