@@ -357,6 +357,8 @@ async def container(
         from parlant.core.health import (
             NLP_EMBED_KIND,
             NLP_REQUEST_KIND,
+            NLP_REQUESTS_COUNTER,
+            NLP_TOKENS_COUNTER,
             EventLoopHealthView,
             NLPHealthView,
             ReportRetention,
@@ -368,7 +370,9 @@ async def container(
         health_reporter.configure_retention(
             NLP_EMBED_KIND, ReportRetention(window=timedelta(minutes=10), max_count=10_000)
         )
-        health_reporter.register_view(NLPHealthView())
+        health_reporter.configure_counter(NLP_REQUESTS_COUNTER, retention=timedelta(days=1))
+        health_reporter.configure_counter(NLP_TOKENS_COUNTER, retention=timedelta(days=1))
+        health_reporter.register_view(NLPHealthView(health_reporter=health_reporter))
         health_reporter.register_view(EventLoopHealthView(container[EventLoopMonitor]))
         container[HealthReporter] = health_reporter
 

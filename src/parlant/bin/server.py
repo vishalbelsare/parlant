@@ -129,6 +129,8 @@ from parlant.core.event_loop_monitor import EventLoopMonitor
 from parlant.core.health import (
     NLP_EMBED_KIND,
     NLP_REQUEST_KIND,
+    NLP_REQUESTS_COUNTER,
+    NLP_TOKENS_COUNTER,
     EventLoopHealthView,
     HealthReporter,
     NLPHealthView,
@@ -694,7 +696,9 @@ async def setup_container() -> AsyncIterator[Container]:
         NLP_EMBED_KIND,
         ReportRetention(window=timedelta(minutes=10), max_count=10_000),
     )
-    health_reporter.register_view(NLPHealthView())
+    health_reporter.configure_counter(NLP_REQUESTS_COUNTER, retention=timedelta(days=1))
+    health_reporter.configure_counter(NLP_TOKENS_COUNTER, retention=timedelta(days=1))
+    health_reporter.register_view(NLPHealthView(health_reporter=health_reporter))
     health_reporter.register_view(EventLoopHealthView(c[EventLoopMonitor]))
     c[HealthReporter] = health_reporter
 

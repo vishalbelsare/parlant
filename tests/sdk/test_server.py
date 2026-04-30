@@ -344,3 +344,38 @@ class Test_that_healthz_reports_nlp_section_after_message_exchange(SDKTest):
             assert len(nlp_section["schemas"]) > 0, (
                 f"Expected at least one schema in nlp.schemas, got {nlp_section}"
             )
+
+
+class Test_that_healthz_reports_token_and_request_rates_after_message_exchange(SDKTest):
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Token Rate Agent",
+            description="Agent for testing token/request rate reporting",
+        )
+
+    async def run(self, ctx: Context) -> None:
+        response = await ctx.send_and_receive_message(
+            customer_message="Hello, how are you?",
+            recipient=self.agent,
+        )
+        assert len(response) > 0
+
+        async with httpx.AsyncClient() as client:
+            health_response = await client.get(f"http://localhost:{ctx.server.port}/healthz")
+            assert health_response.status_code == 200
+
+            data = health_response.json()
+            nlp_section = data["checks"]["nlp"]
+
+            for block_name in ("tokens_per_minute", "requests_per_minute"):
+                assert block_name in nlp_section, (
+                    f"Expected '{block_name}' in nlp section, got {nlp_section}"
+                )
+                block = nlp_section[block_name]
+                for window in ("1m", "5m", "1h", "1d"):
+                    assert window in block, (
+                        f"Expected window '{window}' in {block_name}, got {block}"
+                    )
+                    assert block[window] > 0, (
+                        f"Expected positive {block_name}[{window}] after a message exchange, got {block}"
+                    )

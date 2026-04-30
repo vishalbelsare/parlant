@@ -26,7 +26,7 @@ from typing_extensions import override
 
 from parlant.core.async_utils import Stopwatch
 from parlant.core.common import Version
-from parlant.core.health import NLP_EMBED_KIND, HealthReporter
+from parlant.core.health import NLP_EMBED_KIND, NLP_REQUESTS_COUNTER, HealthReporter
 from parlant.core.loggers import Logger
 from parlant.core.meter import DurationHistogram, Meter
 from parlant.core.nlp.tokenization import EstimatingTokenizer, ZeroEstimatingTokenizer
@@ -274,6 +274,7 @@ class BaseEmbedder(Embedder):
                     "error_class": type(error).__name__ if error is not None else None,
                 },
             )
+            self.health_reporter.increment_counter(NLP_REQUESTS_COUNTER, 1)
         except Exception:
             self.logger.debug("Failed to report NLP health for embed request")
 

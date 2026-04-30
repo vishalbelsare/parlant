@@ -14,7 +14,7 @@
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
 from parlant.core.health import (
@@ -25,6 +25,7 @@ from parlant.core.health import (
     ReportRetention,
     ViewSnapshot,
 )
+from parlant.core.health.reporter import RollingCounter
 
 
 @dataclass
@@ -257,3 +258,70 @@ async def test_that_a_kind_without_configured_retention_raises_on_report() -> No
 
 def _attrs(reports: Sequence[HealthReport]) -> list[Mapping[str, Any]]:
     return [r.attributes for r in reports]
+
+
+def test_that_a_rolling_counter_returns_zero_when_no_increments_have_happened() -> None:
+    counter = RollingCounter(retention=timedelta(days=1))
+    assert counter.sum_in_window(timedelta(minutes=1)) == 0
+    assert counter.per_minute(timedelta(minutes=5)) == 0.0
+
+
+def test_that_a_rolling_counter_sums_increments_within_the_query_window() -> None:
+    counter = RollingCounter(retention=timedelta(days=1))
+    counter.increment(100)
+    counter.increment(50)
+    counter.increment(25)
+    assert counter.sum_in_window(timedelta(minutes=1)) == 175
+
+
+def test_that_a_rolling_counter_excludes_increments_older_than_the_query_window() -> None:
+    counter = RollingCounter(retention=timedelta(days=1))
+    now = datetime.now(timezone.utc)
+
+    counter.increment(1000, at=now - timedelta(minutes=10))
+    counter.increment(7, at=now - timedelta(seconds=30))
+
+    assert counter.sum_in_window(timedelta(minutes=1), now=now) == 7
+    assert counter.sum_in_window(timedelta(minutes=15), now=now) == 1007
+
+
+def test_that_a_rolling_counter_prunes_buckets_older_than_its_retention() -> None:
+    counter = RollingCounter(retention=timedelta(minutes=5))
+    now = datetime.now(timezone.utc)
+
+    counter.increment(999, at=now - timedelta(minutes=30))
+    counter.increment(3, at=now)
+
+    assert counter.sum_in_window(timedelta(days=1), now=now) == 3
+
+
+def test_that_a_rolling_counter_per_minute_normalizes_by_window_minutes() -> None:
+    counter = RollingCounter(retention=timedelta(days=1))
+    now = datetime.now(timezone.utc)
+
+    for i in range(60):
+        counter.increment(10, at=now - timedelta(seconds=i))
+
+    rate = counter.per_minute(timedelta(minutes=1), now=now)
+    assert rate == 600.0
+
+
+def test_that_health_reporter_exposes_configured_counters() -> None:
+    reporter = HealthReporter()
+    reporter.configure_counter("nlp.tokens", retention=timedelta(days=1))
+
+    reporter.increment_counter("nlp.tokens", 1234)
+    reporter.increment_counter("nlp.tokens", 66)
+
+    assert reporter.counter_sum("nlp.tokens", timedelta(minutes=1)) == 1300
+    assert reporter.counter_per_minute("nlp.tokens", timedelta(minutes=1)) == 1300.0
+
+
+def test_that_incrementing_an_unconfigured_counter_raises() -> None:
+    reporter = HealthReporter()
+    raised: type[BaseException] | None = None
+    try:
+        reporter.increment_counter("ghost", 1)
+    except Exception as e:  # noqa: BLE001
+        raised = type(e)
+    assert raised is not None

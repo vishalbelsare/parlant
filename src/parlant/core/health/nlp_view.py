@@ -20,11 +20,13 @@ breakdown. The view's status is the worst across all observed schemas.
 """
 
 from collections import Counter
+from datetime import timedelta
 from typing import Any, Mapping, Sequence
 
 from parlant.core.health.reporter import (
     Criticality,
     HealthReport,
+    HealthReporter,
     OverallHealth,
     ViewSnapshot,
 )
@@ -32,6 +34,16 @@ from parlant.core.health.reporter import (
 
 NLP_REQUEST_KIND = "nlp.request"
 NLP_EMBED_KIND = "nlp.embed"
+
+NLP_REQUESTS_COUNTER = "nlp.requests"
+NLP_TOKENS_COUNTER = "nlp.tokens"
+
+_RATE_WINDOWS: tuple[tuple[str, timedelta], ...] = (
+    ("1m", timedelta(minutes=1)),
+    ("5m", timedelta(minutes=5)),
+    ("1h", timedelta(hours=1)),
+    ("1d", timedelta(days=1)),
+)
 
 
 def _percentile(values: list[float], p: float) -> float:
@@ -57,12 +69,14 @@ class NLPHealthView:
     def __init__(
         self,
         *,
+        health_reporter: HealthReporter | None = None,
         degraded_below_success_rate: float = 0.95,
         unhealthy_below_success_rate: float = 0.80,
         degraded_p95_ms: float = 5_000.0,
         unhealthy_p95_ms: float = 15_000.0,
         recent_errors_top_k: int = 5,
     ) -> None:
+        self._health_reporter = health_reporter
         self._degraded_below_success_rate = degraded_below_success_rate
         self._unhealthy_below_success_rate = unhealthy_below_success_rate
         self._degraded_p95_ms = degraded_p95_ms
@@ -77,10 +91,12 @@ class NLPHealthView:
         for kind in self.kinds:
             all_reports.extend(reports_by_kind.get(kind, ()))
 
+        rate_blocks = self._render_rate_blocks()
+
         if not all_reports:
             return ViewSnapshot(
                 status=OverallHealth.HEALTHY,
-                body={"sample_count": 0, "schemas": {}},
+                body={"sample_count": 0, "schemas": {}, **rate_blocks},
             )
 
         per_schema: dict[str, list[HealthReport]] = {}
@@ -101,8 +117,32 @@ class NLPHealthView:
             body={
                 "sample_count": len(all_reports),
                 "schemas": schemas_body,
+                **rate_blocks,
             },
         )
+
+    def _render_rate_blocks(self) -> dict[str, Any]:
+        if self._health_reporter is None:
+            return {}
+        try:
+            return {
+                "requests_per_minute": {
+                    label: round(
+                        self._health_reporter.counter_per_minute(NLP_REQUESTS_COUNTER, window),
+                        4,
+                    )
+                    for label, window in _RATE_WINDOWS
+                },
+                "tokens_per_minute": {
+                    label: round(
+                        self._health_reporter.counter_per_minute(NLP_TOKENS_COUNTER, window),
+                        4,
+                    )
+                    for label, window in _RATE_WINDOWS
+                },
+            }
+        except KeyError:
+            return {}
 
     def _render_schema(
         self,

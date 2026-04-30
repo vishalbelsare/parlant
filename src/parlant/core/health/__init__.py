@@ -13,7 +13,13 @@
 # limitations under the License.
 
 from parlant.core.health.event_loop_view import EventLoopHealthView
-from parlant.core.health.nlp_view import NLP_EMBED_KIND, NLP_REQUEST_KIND, NLPHealthView
+from parlant.core.health.nlp_view import (
+    NLP_EMBED_KIND,
+    NLP_REQUEST_KIND,
+    NLP_REQUESTS_COUNTER,
+    NLP_TOKENS_COUNTER,
+    NLPHealthView,
+)
 from parlant.core.health.reporter import (
     Criticality,
     HealthReport,
@@ -21,6 +27,7 @@ from parlant.core.health.reporter import (
     HealthView,
     OverallHealth,
     ReportRetention,
+    RollingCounter,
     ViewSnapshot,
 )
 
@@ -33,7 +40,10 @@ __all__ = [
     "NLPHealthView",
     "NLP_EMBED_KIND",
     "NLP_REQUEST_KIND",
+    "NLP_REQUESTS_COUNTER",
+    "NLP_TOKENS_COUNTER",
     "OverallHealth",
     "ReportRetention",
+    "RollingCounter",
     "ViewSnapshot",
 ]

@@ -21,7 +21,12 @@ from typing_extensions import override
 from parlant.core.async_utils import Stopwatch
 from parlant.core.common import DefaultBaseModel
 from parlant.core.engines.alpha.prompt_builder import PromptBuilder
-from parlant.core.health import NLP_REQUEST_KIND, HealthReporter
+from parlant.core.health import (
+    NLP_REQUEST_KIND,
+    NLP_REQUESTS_COUNTER,
+    NLP_TOKENS_COUNTER,
+    HealthReporter,
+)
 from parlant.core.loggers import Logger
 from parlant.core.meter import DurationHistogram, Meter
 from parlant.core.nlp.generation_info import GenerationInfo, UsageInfo
@@ -180,7 +185,12 @@ class BaseStreamingTextGenerator(StreamingTextGenerator):
                         "duration": duration,
                     },
                 )
-                self._report_health(duration, success=True, error=None)
+                stream_usage: UsageInfo | None = None
+                try:
+                    stream_usage = usage_getter() if usage_getter is not None else None
+                except Exception:
+                    stream_usage = None
+                self._report_health(duration, success=True, error=None, usage=stream_usage)
             except Exception as exc:
                 duration = start.elapsed
                 self.tracer.add_event(
@@ -190,7 +200,7 @@ class BaseStreamingTextGenerator(StreamingTextGenerator):
                         "duration": duration,
                     },
                 )
-                self._report_health(duration, success=False, error=exc)
+                self._report_health(duration, success=False, error=exc, usage=None)
                 raise
 
         def info_getter() -> GenerationInfo:
@@ -215,6 +225,7 @@ class BaseStreamingTextGenerator(StreamingTextGenerator):
         *,
         success: bool,
         error: BaseException | None,
+        usage: UsageInfo | None = None,
     ) -> None:
         try:
             self.health_reporter.report(
@@ -227,6 +238,11 @@ class BaseStreamingTextGenerator(StreamingTextGenerator):
                     "error_class": type(error).__name__ if error is not None else None,
                 },
             )
+            self.health_reporter.increment_counter(NLP_REQUESTS_COUNTER, 1)
+            if usage is not None:
+                self.health_reporter.increment_counter(
+                    NLP_TOKENS_COUNTER, usage.input_tokens + usage.output_tokens
+                )
         except Exception:
             self.logger.debug("Failed to report NLP health for streaming request")
 
@@ -354,7 +370,9 @@ class BaseSchematicGenerator(SchematicGenerator[T]):
                         "duration": start.elapsed,
                     },
                 )
-                self._report_health(start.elapsed, success=True, error=None)
+                self._report_health(
+                    start.elapsed, success=True, error=None, usage=result.info.usage
+                )
 
             return result
 
@@ -364,6 +382,7 @@ class BaseSchematicGenerator(SchematicGenerator[T]):
         *,
         success: bool,
         error: BaseException | None,
+        usage: UsageInfo | None = None,
     ) -> None:
         try:
             self.health_reporter.report(
@@ -376,6 +395,11 @@ class BaseSchematicGenerator(SchematicGenerator[T]):
                     "error_class": type(error).__name__ if error is not None else None,
                 },
             )
+            self.health_reporter.increment_counter(NLP_REQUESTS_COUNTER, 1)
+            if usage is not None:
+                self.health_reporter.increment_counter(
+                    NLP_TOKENS_COUNTER, usage.input_tokens + usage.output_tokens
+                )
         except Exception:
             self.logger.debug("Failed to report NLP health for generation request")
 

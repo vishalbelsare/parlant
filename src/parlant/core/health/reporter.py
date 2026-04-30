@@ -99,6 +99,52 @@ class HealthView(Protocol):
 
 _DEFAULT_SNAPSHOT_CACHE_TTL = timedelta(minutes=5)
 
+_COUNTER_BUCKET_SECONDS = 10
+
+
+class RollingCounter:
+    """Per-bucket rolling counter for cheap windowed sums.
+
+    Pre-aggregates increments into 10-second buckets so windowed-sum queries
+    cost O(buckets-in-window) rather than O(events-in-window). Suitable for
+    request-rate / token-rate telemetry over windows up to one day.
+    """
+
+    def __init__(self, retention: timedelta) -> None:
+        self._retention = retention
+        self._buckets: dict[int, int] = {}
+        self._lock = Lock()
+
+    def increment(self, amount: int, *, at: datetime | None = None) -> None:
+        ts = at if at is not None else datetime.now(timezone.utc)
+        bucket_epoch = (int(ts.timestamp()) // _COUNTER_BUCKET_SECONDS) * _COUNTER_BUCKET_SECONDS
+        with self._lock:
+            self._buckets[bucket_epoch] = self._buckets.get(bucket_epoch, 0) + amount
+            self._prune(ts)
+
+    def sum_in_window(self, window: timedelta, *, now: datetime | None = None) -> int:
+        ts = now if now is not None else datetime.now(timezone.utc)
+        cutoff = int(ts.timestamp()) - int(window.total_seconds())
+        with self._lock:
+            self._prune(ts)
+            return sum(
+                count
+                for epoch, count in self._buckets.items()
+                if epoch + _COUNTER_BUCKET_SECONDS > cutoff
+            )
+
+    def per_minute(self, window: timedelta, *, now: datetime | None = None) -> float:
+        minutes = window.total_seconds() / 60.0
+        if minutes <= 0:
+            return 0.0
+        return self.sum_in_window(window, now=now) / minutes
+
+    def _prune(self, now_ts: datetime) -> None:
+        cutoff = int(now_ts.timestamp()) - int(self._retention.total_seconds())
+        old_keys = [k for k in self._buckets if k + _COUNTER_BUCKET_SECONDS <= cutoff]
+        for k in old_keys:
+            del self._buckets[k]
+
 
 class HealthReporter:
     """Collects health reports and renders them through registered views.
@@ -116,6 +162,7 @@ class HealthReporter:
     ) -> None:
         self._retention: dict[str, ReportRetention] = {}
         self._buffers: dict[str, deque[HealthReport]] = defaultdict(deque)
+        self._counters: dict[str, RollingCounter] = {}
         self._views: list[HealthView] = []
         self._lock = Lock()
         self._snapshot_cache_ttl = snapshot_cache_ttl
@@ -126,6 +173,33 @@ class HealthReporter:
         """Configure how long and how many reports of ``kind`` to retain."""
         with self._lock:
             self._retention[kind] = retention
+
+    def configure_counter(self, name: str, retention: timedelta) -> None:
+        """Configure a named rolling counter with the given retention window."""
+        with self._lock:
+            self._counters[name] = RollingCounter(retention=retention)
+
+    def increment_counter(self, name: str, amount: int) -> None:
+        """Increment a configured counter. Raises if the counter is unknown."""
+        with self._lock:
+            counter = self._counters.get(name)
+            if counter is None:
+                raise KeyError(f"No counter configured named '{name}'")
+        counter.increment(amount)
+
+    def counter_sum(self, name: str, window: timedelta) -> int:
+        with self._lock:
+            counter = self._counters.get(name)
+            if counter is None:
+                raise KeyError(f"No counter configured named '{name}'")
+        return counter.sum_in_window(window)
+
+    def counter_per_minute(self, name: str, window: timedelta) -> float:
+        with self._lock:
+            counter = self._counters.get(name)
+            if counter is None:
+                raise KeyError(f"No counter configured named '{name}'")
+        return counter.per_minute(window)
 
     def register_view(self, view: HealthView) -> None:
         """Register a view that participates in ``snapshot()`` output."""
