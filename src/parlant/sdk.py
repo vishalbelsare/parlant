@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import enum
 from functools import partial
-from hashlib import md5
+import xxhash
 import importlib.util
 from itertools import chain
 from pathlib import Path
@@ -641,9 +641,9 @@ class _CachedEvaluator:
         """Generate a hash for the guideline evaluation request."""
         tool_ids_str = ",".join(str(tool_id) for tool_id in tool_ids) if tool_ids else ""
 
-        return md5(
+        return xxhash.xxh3_128_hexdigest(
             f"{g.condition or ''}:{g.action or ''}:{tool_ids_str}:{journey_state_propositions}:{properties_proposition}".encode()
-        ).hexdigest()
+        )
 
     def _hash_journey_evaluation_request(
         self,
@@ -655,7 +655,7 @@ class _CachedEvaluator:
             ",".join(str(edge.id) for edge in journey.transitions) if journey.transitions else ""
         )
 
-        return md5(f"{journey.id}:{node_ids_str}:{edge_ids_str}".encode()).hexdigest()
+        return xxhash.xxh3_128_hexdigest(f"{journey.id}:{node_ids_str}:{edge_ids_str}".encode())
 
     async def evaluate_guideline(
         self,

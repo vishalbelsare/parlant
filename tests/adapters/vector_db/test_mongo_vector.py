@@ -22,7 +22,7 @@ from typing_extensions import Required
 
 from parlant.adapters.nlp.openai_service import OpenAITextEmbedding3Large
 from parlant.adapters.vector_db.mongo import MongoVectorCollection, MongoVectorDatabase
-from parlant.core.common import Version, md5_checksum
+from parlant.core.common import Version, xxh3_checksum
 from parlant.core.nlp.embedding import EmbedderFactory, NullEmbeddingCache
 from parlant.core.loggers import Logger
 from parlant.core.persistence.common import ObjectId
@@ -138,7 +138,7 @@ async def test_that_update_one_without_upsert_updates_existing_document(
         version=doc_version,
         content="test content",
         name="test name",
-        checksum=md5_checksum("test content"),
+        checksum=xxh3_checksum("test content"),
     )
 
     await mongo_collection.insert_one(document)
@@ -148,7 +148,7 @@ async def test_that_update_one_without_upsert_updates_existing_document(
         version=doc_version,
         content="test content",
         name="new name",
-        checksum=md5_checksum("test content"),
+        checksum=xxh3_checksum("test content"),
     )
 
     await mongo_collection.update_one(
@@ -174,7 +174,7 @@ async def test_that_update_one_without_upsert_and_no_preexisting_document_does_n
         version=doc_version,
         content="test content",
         name="test name",
-        checksum=md5_checksum("test content"),
+        checksum=xxh3_checksum("test content"),
     )
 
     result = await mongo_collection.update_one(
@@ -196,7 +196,7 @@ async def test_that_update_one_with_upsert_and_no_preexisting_document_inserts_n
         version=doc_version,
         content="test content",
         name="test name",
-        checksum=md5_checksum("test content"),
+        checksum=xxh3_checksum("test content"),
     )
 
     await mongo_collection.update_one(
@@ -219,7 +219,7 @@ async def test_that_delete_one_removes_document(
         version=doc_version,
         content="test content",
         name="test name",
-        checksum=md5_checksum("test content"),
+        checksum=xxh3_checksum("test content"),
     )
 
     await mongo_collection.insert_one(document)
@@ -246,7 +246,7 @@ async def test_that_find_similar_documents_returns_ranked_results(
         version=doc_version,
         content="apple",
         name="Apple",
-        checksum=md5_checksum("apple"),
+        checksum=xxh3_checksum("apple"),
     )
 
     banana_document = _TestDocument(
@@ -254,7 +254,7 @@ async def test_that_find_similar_documents_returns_ranked_results(
         version=doc_version,
         content="banana",
         name="Banana",
-        checksum=md5_checksum("banana"),
+        checksum=xxh3_checksum("banana"),
     )
 
     cherry_document = _TestDocument(
@@ -262,7 +262,7 @@ async def test_that_find_similar_documents_returns_ranked_results(
         version=doc_version,
         content="cherry",
         name="Cherry",
-        checksum=md5_checksum("cherry"),
+        checksum=xxh3_checksum("cherry"),
     )
 
     await mongo_collection.insert_one(apple_document)
@@ -274,7 +274,7 @@ async def test_that_find_similar_documents_returns_ranked_results(
             version=doc_version,
             content="date",
             name="Date",
-            checksum=md5_checksum("date"),
+            checksum=xxh3_checksum("date"),
         )
     )
     await mongo_collection.insert_one(
@@ -283,7 +283,7 @@ async def test_that_find_similar_documents_returns_ranked_results(
             version=doc_version,
             content="elderberry",
             name="Elderberry",
-            checksum=md5_checksum("elderberry"),
+            checksum=xxh3_checksum("elderberry"),
         )
     )
 
@@ -382,7 +382,7 @@ async def test_that_loading_collection_preserves_documents(
         version=doc_version,
         content="test content",
         name="test name",
-        checksum=md5_checksum("test content"),
+        checksum=xxh3_checksum("test content"),
     )
 
     await collection.insert_one(document)

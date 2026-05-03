@@ -60,6 +60,7 @@ dependencies = [
     "uvicorn>=0.38.0",
     "websocket-client>=1.5.3",
     "wsproto>=1.2.0",
+    "xxhash>=3.5.0",
 ]
 
 [project.scripts]

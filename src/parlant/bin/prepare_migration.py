@@ -79,7 +79,7 @@ from parlant.core.capabilities import (
     CapabilityVectorDocument,
     CapabilityVectorStore,
 )
-from parlant.core.common import generate_id, md5_checksum, Version
+from parlant.core.common import generate_id, xxh3_checksum, Version
 from parlant.core.context_variables import (
     ContextVariableDocument_v0_1_0,
     ContextVariableTagAssociationDocument,
@@ -494,7 +494,7 @@ async def migrate_glossary_with_metadata() -> None:
 
                 new_doc = {
                     **all_items["metadatas"][i],
-                    "checksum": md5_checksum(all_items["documents"][i]),
+                    "checksum": xxh3_checksum(all_items["documents"][i]),
                 }
 
                 chroma_unembedded_collection.add(
@@ -825,7 +825,7 @@ async def migrate_glossary_0_1_0_to_0_2_0(
             new_doc = {
                 "id": doc["id"],
                 "version": Version.String("0.2.0"),
-                "checksum": md5_checksum(
+                "checksum": xxh3_checksum(
                     cast(str, doc["content"]) + datetime.now(timezone.utc).isoformat()
                 ),
                 "content": doc["content"],
@@ -942,7 +942,7 @@ async def migrate_utterances_0_1_0_to_0_2_0(
                 "id": doc["id"],
                 "version": Version.String("0.2.0"),
                 "content": content,
-                "checksum": md5_checksum(content),
+                "checksum": xxh3_checksum(content),
                 "creation_utc": doc["creation_utc"],
                 "value": doc["value"],
                 "fields": json.dumps(doc["fields"]),
@@ -1080,7 +1080,7 @@ async def migrate_journeys_0_1_0_to_0_2_0(
                 id=doc["id"],
                 version=Version.String("0.2.0"),
                 content=content,
-                checksum=md5_checksum(content),
+                checksum=xxh3_checksum(content),
                 creation_utc=doc["creation_utc"],
                 title=doc["title"],
                 description=doc["description"],
@@ -1471,7 +1471,7 @@ async def migrate_journeys_0_2_0_to_0_3_0(
                 journey_id=JourneyId(cast(str, doc["id"])),
                 version=Version.String("0.3.0"),
                 content=content,
-                checksum=md5_checksum(content),
+                checksum=xxh3_checksum(content),
             )
 
             chroma_unembedded_collection.delete(
@@ -1722,7 +1722,7 @@ async def migrate_canned_responses_0_2_0_to_0_4_0(
                             id=ObjectId(generate_id()),
                             canned_response_id=u2_doc["id"],
                             version=Version.String("0.3.0"),
-                            checksum=md5_checksum(u2_doc["content"]),
+                            checksum=xxh3_checksum(u2_doc["content"]),
                             content=u2_doc["content"],
                         )
                     ]
@@ -1751,7 +1751,7 @@ async def migrate_canned_responses_0_2_0_to_0_4_0(
                                 id=ObjectId(generate_id()),
                                 canned_response_id=u3_doc["utterance_id"],
                                 version=Version.String("0.4.0"),
-                                checksum=md5_checksum(c),
+                                checksum=xxh3_checksum(c),
                                 content=c,
                             )
                             for c in [u3_doc["value"], *json.loads(u3_doc["queries"])]
@@ -1903,7 +1903,7 @@ async def migrate_capabilities_0_1_0_to_0_2_0(
                             id=ObjectId(generate_id()),
                             canned_response_id=old_doc["capability_id"],
                             version=Version.String("0.2.0"),
-                            checksum=md5_checksum(c),
+                            checksum=xxh3_checksum(c),
                             content=c,
                         )
                         for c in [

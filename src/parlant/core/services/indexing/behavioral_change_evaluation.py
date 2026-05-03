@@ -20,7 +20,7 @@ from typing import Optional, Sequence, cast
 from parlant.core import async_utils
 from parlant.core.agents import AgentStore
 from parlant.core.background_tasks import BackgroundTaskService
-from parlant.core.common import JSONSerializable, md5_checksum
+from parlant.core.common import JSONSerializable, xxh3_checksum
 from parlant.core.evaluations import (
     Evaluation,
     EvaluationStatus,
@@ -778,7 +778,7 @@ class BehavioralChangeEvaluator:
 
             invoices: list[Invoice] = []
             for i, result in enumerate(evaluation_data):
-                invoice_checksum = md5_checksum(str(evaluation.invoices[i].payload))
+                invoice_checksum = xxh3_checksum(str(evaluation.invoices[i].payload))
                 state_version = str(hash("Temporarily"))
 
                 invoices.append(

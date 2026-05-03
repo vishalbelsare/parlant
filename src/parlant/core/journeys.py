@@ -21,7 +21,7 @@ from typing_extensions import override, TypedDict, Self, Required
 
 from parlant.core.agents import CompositionMode
 from parlant.core.async_utils import ReaderWriterLock, safe_gather
-from parlant.core.common import JSONSerializable, md5_checksum
+from parlant.core.common import JSONSerializable, xxh3_checksum
 from parlant.core.common import ItemNotFoundError, UniqueId, Version, IdGenerator, to_json_dict
 from parlant.core.guidelines import GuidelineId
 from parlant.core.nlp.embedding import Embedder, EmbedderFactory
@@ -799,7 +799,7 @@ class JourneyVectorStore(JourneyStore):
         node: JourneyNode,
         journey_id: JourneyId,
     ) -> JourneyNodeAssociationDocument:
-        id_checksum = md5_checksum(f"{journey_id}{node.id}")
+        id_checksum = xxh3_checksum(f"{journey_id}{node.id}")
 
         return JourneyNodeAssociationDocument(
             id=ObjectId(self._id_generator.generate(id_checksum)),
@@ -892,7 +892,7 @@ class JourneyVectorStore(JourneyStore):
                 if existing:
                     raise ValueError(f"Journey with id '{journey_id}' already exists")
             else:
-                journey_checksum = md5_checksum(f"{title}{description}{triggers}")
+                journey_checksum = xxh3_checksum(f"{title}{description}{triggers}")
                 journey_id = JourneyId(self._id_generator.generate(journey_checksum))
             journey_root_id = JourneyNodeId(self._id_generator.generate(f"{journey_id}root"))
 
@@ -932,16 +932,16 @@ class JourneyVectorStore(JourneyStore):
             await self._collection.insert_one(document=self._serialize(journey))
             await self._vector_collection.insert_one(
                 document={
-                    "id": ObjectId(self._id_generator.generate(md5_checksum(content))),
+                    "id": ObjectId(self._id_generator.generate(xxh3_checksum(content))),
                     "version": self.VERSION.to_string(),
                     "journey_id": journey.id,
                     "content": content,
-                    "checksum": md5_checksum(content),
+                    "checksum": xxh3_checksum(content),
                 }
             )
 
             for tag_id in tags or []:
-                tag_checksum = md5_checksum(f"{journey.id}{tag_id}")
+                tag_checksum = xxh3_checksum(f"{journey.id}{tag_id}")
 
                 await self._tag_association_collection.insert_one(
                     document={
@@ -954,7 +954,7 @@ class JourneyVectorStore(JourneyStore):
                 )
 
             for trigger in triggers:
-                trigger_checksum = md5_checksum(f"{journey.id}{trigger}")
+                trigger_checksum = xxh3_checksum(f"{journey.id}{trigger}")
 
                 await self._trigger_association_collection.insert_one(
                     document={
@@ -1011,7 +1011,7 @@ class JourneyVectorStore(JourneyStore):
                 filters={"journey_id": {"$eq": journey_id}},
                 params={
                     "content": content,
-                    "checksum": md5_checksum(content),
+                    "checksum": xxh3_checksum(content),
                 },
             )
 
@@ -1141,7 +1141,7 @@ class JourneyVectorStore(JourneyStore):
             if trigger in journey.triggers:
                 return False
 
-            trigger_checksum = md5_checksum(f"{journey_id}{trigger}")
+            trigger_checksum = xxh3_checksum(f"{journey_id}{trigger}")
 
             await self._trigger_association_collection.insert_one(
                 document={
@@ -1186,7 +1186,7 @@ class JourneyVectorStore(JourneyStore):
             if tag_id in journey.tags:
                 return False
 
-            association_checksum = md5_checksum(f"{journey_id}{tag_id}")
+            association_checksum = xxh3_checksum(f"{journey_id}{tag_id}")
 
             association_document: JourneyTagAssociationDocument = {
                 "id": ObjectId(self._id_generator.generate(association_checksum)),
@@ -1278,7 +1278,7 @@ class JourneyVectorStore(JourneyStore):
         if id is not None:
             node_id = id
         else:
-            node_checksum = md5_checksum(f"{journey_id}{action}{tools}")
+            node_checksum = xxh3_checksum(f"{journey_id}{action}{tools}")
             node_id = JourneyNodeId(self._id_generator.generate(node_checksum))
 
         async with self._lock.writer_lock:
@@ -1459,7 +1459,7 @@ class JourneyVectorStore(JourneyStore):
         condition: Optional[str] = None,
     ) -> JourneyEdge:
         async with self._lock.writer_lock:
-            edge_checksum = md5_checksum(f"{journey_id}{source}{target}{condition}")
+            edge_checksum = xxh3_checksum(f"{journey_id}{source}{target}{condition}")
 
             edge = JourneyEdge(
                 id=JourneyEdgeId(self._id_generator.generate(edge_checksum)),

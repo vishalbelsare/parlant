@@ -27,7 +27,7 @@ from parlant.core.common import (
     UniqueId,
     Version,
     IdGenerator,
-    md5_checksum,
+    xxh3_checksum,
 )
 from parlant.core.persistence.common import ObjectId, Where
 from parlant.core.persistence.document_database import (
@@ -615,7 +615,7 @@ class GuidelineDocumentStore(GuidelineStore):
                 if existing:
                     raise ValueError(f"Guideline with id '{guideline_id}' already exists")
             else:
-                guideline_checksum = md5_checksum(f"{condition}{action or ''}{enabled}{metadata}")
+                guideline_checksum = xxh3_checksum(f"{condition}{action or ''}{enabled}{metadata}")
                 guideline_id = GuidelineId(self._id_generator.generate(guideline_checksum))
 
             guideline = Guideline(
@@ -643,7 +643,7 @@ class GuidelineDocumentStore(GuidelineStore):
             )
 
             for tag_id in tags or []:
-                tag_checksum = md5_checksum(f"{guideline.id}{tag_id}")
+                tag_checksum = xxh3_checksum(f"{guideline.id}{tag_id}")
 
                 await self._tag_association_collection.insert_one(
                     document={
@@ -823,7 +823,7 @@ class GuidelineDocumentStore(GuidelineStore):
 
             creation_utc = creation_utc or datetime.now(timezone.utc)
 
-            association_checksum = md5_checksum(f"{guideline.id}{tag_id}")
+            association_checksum = xxh3_checksum(f"{guideline.id}{tag_id}")
 
             association_document: GuidelineTagAssociationDocument = {
                 "id": ObjectId(self._id_generator.generate(association_checksum)),
