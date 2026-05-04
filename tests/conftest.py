@@ -32,6 +32,7 @@ from parlant.api.authorization import AuthorizationPolicy, DevelopmentAuthorizat
 
 from parlant.core.background_tasks import BackgroundTaskService
 from parlant.core.capabilities import CapabilityStore, CapabilityVectorStore
+from parlant.core.application_context import ApplicationContext
 from parlant.core.health import HealthReporter, NullHealthReporter
 from parlant.core.common import IdGenerator
 from parlant.core.engines.alpha.guideline_matching.generic.guideline_low_criticality_batch import (
@@ -353,7 +354,8 @@ async def container(
 
         container[EventLoopMonitor] = await stack.enter_async_context(EventLoopMonitor())
 
-        container[HealthReporter] = NullHealthReporter()
+        container[ApplicationContext] = ApplicationContext(instance_id="test-instance")
+        container[HealthReporter] = NullHealthReporter(container[ApplicationContext])
 
         container[AgentStore] = await stack.enter_async_context(
             AgentDocumentStore(container[IdGenerator], TransientDocumentDatabase())

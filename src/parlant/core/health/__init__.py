@@ -28,7 +28,7 @@ from parlant.core.health.nlp_view import (
     SchemaThresholds,
 )
 from parlant.core.health.reporter import (
-    Criticality,
+    StatusCriticality,
     HealthReport,
     HealthReporter,
     HealthView,
@@ -40,7 +40,7 @@ from parlant.core.health.reporter import (
 )
 
 __all__ = [
-    "Criticality",
+    "StatusCriticality",
     "ENGINE_TTFM_KIND",
     "ENGINE_TURN_KIND",
     "ENGINE_TURNS_COUNTER",

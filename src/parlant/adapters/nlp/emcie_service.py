@@ -31,6 +31,8 @@ from parlant.adapters.nlp.common import normalize_json_output, record_llm_metric
 from parlant.core.engines.alpha.prompt_builder import PromptBuilder
 from parlant.core.loggers import Logger
 from parlant.core.meter import Meter
+from parlant.core.services.indexing.common import ProgressReport
+from parlant.core.services.indexing.indexer import IndexRequest, Indexer
 from parlant.core.nlp.policies import policy, retry
 from parlant.core.nlp.tokenization import EstimatingTokenizer
 from parlant.core.nlp.service import (
@@ -659,6 +661,16 @@ class JackalEmbedding(EmcieEmbedder):
     @property
     def dimensions(self) -> int:
         return 1536
+
+
+class EmcieIndexer(Indexer):
+    @override
+    async def index(
+        self,
+        payload: Mapping[str, Mapping[str, IndexRequest]],
+        progress_report: ProgressReport,
+    ) -> None:
+        return
 
 
 class EmcieService(NLPService):

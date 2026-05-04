@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import asyncio
-from typing import Callable
 from parlant.core.async_utils import default_done_callback
 from parlant.core.customers import CustomerStore
 from parlant.core.services.tools.plugins import PluginServer, tool as plugin_tool
@@ -406,21 +405,9 @@ class Test_that_external_tool_referenced_by_tool_id_is_called(SDKTest):
 
     tool_was_called = False
 
-    async def create_server(self, port: int) -> tuple[p.Server, Callable[[], p.Container]]:
-        import os
+    async def configure_container(self, container: p.Container) -> p.Container:
         import threading
 
-        from parlant.adapters.nlp.emcie_service import EmcieService
-        from parlant.core.engines.alpha.perceived_performance_policy import (
-            NullPerceivedPerformancePolicy,
-            PerceivedPerformancePolicy,
-        )
-        from parlant.core.health import HealthReporter
-        from parlant.core.loggers import Logger
-        from parlant.core.meter import Meter
-        from parlant.core.tracer import Tracer
-
-        test_container: p.Container = p.Container()
         self.external_port = get_random_port()
 
         outer = self
@@ -467,34 +454,14 @@ class Test_that_external_tool_referenced_by_tool_id_is_called(SDKTest):
         self._external_thread.start()
         ready.wait(timeout=10)
 
-        async def configure_container(container: p.Container) -> p.Container:
-            nonlocal test_container
-            test_container = container.clone()
-            test_container[PerceivedPerformancePolicy] = NullPerceivedPerformancePolicy()
+        await container[ServiceRegistry].update_tool_service(
+            name="external-test",
+            kind="sdk",
+            url=f"http://127.0.0.1:{self.external_port}",
+            transient=True,
+        )
 
-            await container[ServiceRegistry].update_tool_service(
-                name="external-test",
-                kind="sdk",
-                url=f"http://127.0.0.1:{self.external_port}",
-                transient=True,
-            )
-
-            return test_container
-
-        return p.Server(
-            port=port,
-            tool_service_port=get_random_port(),
-            log_level=p.LogLevel.TRACE,
-            configure_container=configure_container,
-            nlp_service=lambda c: EmcieService(
-                c[Logger],
-                c[Tracer],
-                c[Meter],
-                c[HealthReporter],
-                model_tier=os.environ.get("EMCIE_MODEL_TIER", "jackal"),  # type: ignore
-                model_role=os.environ.get("EMCIE_MODEL_ROLE", "teacher"),  # type: ignore
-            ),
-        ), lambda: test_container
+        return container
 
     async def setup(self, server: p.Server) -> None:
         self.agent = await server.create_agent(

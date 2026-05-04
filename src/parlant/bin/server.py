@@ -18,7 +18,6 @@ import asyncio
 from contextlib import asynccontextmanager, AsyncExitStack
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import timedelta
 import importlib
 import inspect
 import os
@@ -55,7 +54,8 @@ from parlant.api.authorization import (
 )
 
 from parlant.core.capabilities import CapabilityStore, CapabilityVectorStore
-from parlant.core.common import IdGenerator
+from parlant.core.application_context import ApplicationContext
+from parlant.core.common import IdGenerator, generate_id
 from parlant.core.engines.alpha import message_generator
 from parlant.core.engines.alpha.guideline_matching.generic import (
     guideline_actionable_batch,
@@ -678,9 +678,11 @@ async def setup_container() -> AsyncIterator[Container]:
 
     _define_singleton(c, Engine, AlphaEngine)
 
-    c[EventLoopMonitor] = EventLoopMonitor()
-
-    c[HealthReporter] = HealthReporter()
+    _define_singleton_value(
+        c, ApplicationContext, ApplicationContext(instance_id=generate_id())
+    )
+    _define_singleton(c, EventLoopMonitor, EventLoopMonitor)
+    _define_singleton(c, HealthReporter, HealthReporter)
 
     _define_singleton(c, Application, Application)
 

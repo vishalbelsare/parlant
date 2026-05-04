@@ -25,7 +25,7 @@ from datetime import timedelta
 from typing import Any, Mapping, Sequence
 
 from parlant.core.health.reporter import (
-    Criticality,
+    StatusCriticality,
     HealthReport,
     HealthReporter,
     OverallHealth,
@@ -81,7 +81,7 @@ class NLPHealthView:
     """
 
     name = "nlp"
-    criticality = Criticality.CRITICAL
+    criticality = StatusCriticality.CRITICAL
     kinds: tuple[str, ...] = (NLP_REQUEST_KIND, NLP_EMBED_KIND)
 
     # Report attribute keys — producers and the renderer share these.
@@ -240,7 +240,11 @@ class NLPHealthView:
         p50_ms: float,
         p95_ms: float,
     ) -> OverallHealth:
-        overrides = self._schema_thresholds.get(schema, SchemaThresholds()) if schema else SchemaThresholds()
+        overrides = (
+            self._schema_thresholds.get(schema, SchemaThresholds())
+            if schema
+            else SchemaThresholds()
+        )
 
         deg_sr = (
             overrides.degraded_below_success_rate

@@ -336,33 +336,32 @@ class NLPServices:
     @staticmethod
     def parlant_cloud(container: Container) -> NLPService:
         """Creates a Parlant Cloud NLPService instance using the provided container."""
-        from parlant.adapters.nlp.parlant_cloud_service import ParlantCloudService
+        from parlant.adapters.nlp.parlant_cloud_service import (
+            ParlantCloudService,
+            ParlantCloudIndexer,
+        )
 
         if error := ParlantCloudService.verify_environment():
             raise NLPServiceConfigurationError(error)
+
+        container[Indexer] = ParlantCloudIndexer
 
         return ParlantCloudService(
             container[Logger],
             container[Tracer],
             container[Meter],
             container[HealthReporter],
-            container[AgentStore],
-            container[GuidelineStore],
-            container[JourneyStore],
-            container[RelationshipStore],
-            container[GlossaryStore],
-            container[ContextVariableStore],
-            container[CannedResponseStore],
-            container[ServiceRegistry],
         )
 
     @staticmethod
     def emcie(container: Container) -> NLPService:
         """Creates an Emcie NLPService instance using the provided container."""
-        from parlant.adapters.nlp.emcie_service import EmcieService
+        from parlant.adapters.nlp.emcie_service import EmcieService, EmcieIndexer
 
         if error := EmcieService.verify_environment():
             raise NLPServiceConfigurationError(error)
+
+        container[Indexer] = EmcieIndexer
 
         return EmcieService(
             container[Logger],
@@ -5490,9 +5489,10 @@ class Server:
                 (GuidelineToolAssociationStore, GuidelineToolAssociationDocumentStore),
                 (RelationshipStore, RelationshipDocumentStore),
             ]:
-                c()[interface] = await self._exit_stack.enter_async_context(
-                    implementation(c()[IdGenerator], TransientDocumentDatabase())  #  type: ignore
-                )
+                if interface not in c().defined_types:
+                    c()[interface] = await self._exit_stack.enter_async_context(
+                        implementation(c()[IdGenerator], TransientDocumentDatabase())  #  type: ignore
+                    )
 
             c()[EvaluationStore] = await self._exit_stack.enter_async_context(
                 EvaluationDocumentStore(TransientDocumentDatabase())
@@ -5580,14 +5580,14 @@ class Server:
 
             if isinstance(self._session_store, SessionStore):
                 c()[SessionStore] = self._session_store
-            else:
+            elif SessionStore not in c().defined_types:
                 c()[SessionStore] = await make_persistable_store(
                     SessionDocumentStore, self._session_store, "sessions"
                 )
 
             if isinstance(self._customer_store, CustomerStore):
                 c()[CustomerStore] = self._customer_store
-            else:
+            elif CustomerStore not in c().defined_types:
                 c()[CustomerStore] = await make_persistable_store(
                     CustomerDocumentStore,
                     self._customer_store,
@@ -5597,7 +5597,7 @@ class Server:
 
             if isinstance(self._context_variable_store, ContextVariableStore):
                 c()[ContextVariableStore] = self._context_variable_store
-            else:
+            elif ContextVariableStore not in c().defined_types:
                 c()[ContextVariableStore] = await make_persistable_store(
                     ContextVariableDocumentStore,
                     self._context_variable_store,
@@ -5610,16 +5610,17 @@ class Server:
                 session_store=c()[SessionStore],
             )
 
-            c()[ServiceRegistry] = await self._exit_stack.enter_async_context(
-                ServiceDocumentRegistry(
-                    database=TransientDocumentDatabase(),
-                    event_emitter_factory=c()[EventEmitterFactory],
-                    logger=c()[Logger],
-                    tracer=c()[Tracer],
-                    nlp_services_provider=lambda: {"__nlp__": c()[NLPService]},
-                    allow_migration=False,
+            if ServiceRegistry not in c().defined_types:
+                c()[ServiceRegistry] = await self._exit_stack.enter_async_context(
+                    ServiceDocumentRegistry(
+                        database=TransientDocumentDatabase(),
+                        event_emitter_factory=c()[EventEmitterFactory],
+                        logger=c()[Logger],
+                        tracer=c()[Tracer],
+                        nlp_services_provider=lambda: {"__nlp__": c()[NLPService]},
+                        allow_migration=False,
+                    )
                 )
-            )
 
             embedder_factory = EmbedderFactory(c())
 
@@ -5632,20 +5633,21 @@ class Server:
                 (CapabilityStore, CapabilityVectorStore),
                 (JourneyStore, JourneyVectorStore),
             ]:
-                c()[vector_store_interface] = await self._exit_stack.enter_async_context(
-                    vector_store_type(
-                        id_generator=c()[IdGenerator],
-                        vector_db=TransientVectorDatabase(
-                            c()[Logger],
-                            c()[Tracer],
-                            embedder_factory,
-                            lambda: c()[EmbeddingCache],
-                        ),
-                        document_db=TransientDocumentDatabase(),
-                        embedder_factory=embedder_factory,
-                        embedder_type_provider=get_embedder_type,
-                    )  # type: ignore
-                )
+                if vector_store_interface not in c().defined_types:
+                    c()[vector_store_interface] = await self._exit_stack.enter_async_context(
+                        vector_store_type(
+                            id_generator=c()[IdGenerator],
+                            vector_db=TransientVectorDatabase(
+                                c()[Logger],
+                                c()[Tracer],
+                                embedder_factory,
+                                lambda: c()[EmbeddingCache],
+                            ),
+                            document_db=TransientDocumentDatabase(),
+                            embedder_factory=embedder_factory,
+                            embedder_type_provider=get_embedder_type,
+                        )  # type: ignore
+                    )
 
         def get_env_based_module() -> ModuleType | None:
             if env_module_name := os.getenv("PARLANT_SDK_MODULE"):
@@ -5663,10 +5665,12 @@ class Server:
             def get_latest_container() -> Container:
                 return latest_container
 
-            await override_stores_with_transient_versions(get_latest_container)
-
             if self._configure_container:
                 latest_container = await self._configure_container(latest_container.clone())
+
+            c[NLPService] = self._nlp_service_func(c)
+
+            await override_stores_with_transient_versions(get_latest_container)
 
             if self._configure_hooks:
                 hooks = await self._configure_hooks(c[EngineHooks])
@@ -5675,8 +5679,6 @@ class Server:
             if env_based_module := get_env_based_module():
                 if module_func := getattr(env_based_module, "configure_container", None):
                     latest_container = await module_func(latest_container.clone())
-
-            latest_container[NLPService] = self._nlp_service_func(latest_container)
 
             return latest_container
 

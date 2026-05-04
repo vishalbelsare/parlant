@@ -20,19 +20,10 @@ import pytest
 from typing_extensions import override
 
 import parlant.sdk as p
-from parlant.core.agents import AgentStore
-from parlant.core.canned_responses import CannedResponseStore
-from parlant.core.context_variables import ContextVariableStore
-from parlant.core.glossary import GlossaryStore
-from parlant.core.guidelines import GuidelineStore
-from parlant.core.journeys import JourneyStore
-from parlant.core.relationships import RelationshipStore
 from parlant.core.services.indexing.common import ProgressReport
 from parlant.core.services.indexing.indexer import IndexRequest, Indexer
-from parlant.core.services.tools.service_registry import ServiceRegistry
 
 from tests.sdk.utils import Context, SDKTest
-from tests.test_utilities import get_random_port
 
 
 class Test_that_server_exposes_api_property_with_fastapi_app(SDKTest):
@@ -49,62 +40,29 @@ class Test_that_configure_api_hook_is_called_with_fastapi_app(SDKTest):
     configure_api_was_called = False
     received_app: FastAPI | None = None
 
-    async def create_server(self, port: int) -> tuple[p.Server, Callable[[], p.Container]]:
-        test_container: p.Container = p.Container()
-
-        async def configure_container(container: p.Container) -> p.Container:
-            nonlocal test_container
-            test_container = container.clone()
-            return test_container
-
-        async def configure_api(app: FastAPI) -> None:
-            self.configure_api_was_called = True
-            self.received_app = app
-
-        return p.Server(
-            port=port,
-            tool_service_port=get_random_port(),
-            log_level=p.LogLevel.TRACE,
-            configure_container=configure_container,
-            configure_api=configure_api,
-        ), lambda: test_container
+    async def configure_api(self, app: FastAPI) -> None:
+        self.configure_api_was_called = True
+        self.received_app = app
 
     async def setup(self, server: p.Server) -> None:
         pass
 
     async def run(self, ctx: Context) -> None:
-        # Verify that configure_api was called with FastAPI app
         assert self.configure_api_was_called
         assert isinstance(self.received_app, FastAPI)
         assert self.received_app is ctx.server.api
 
 
 class Test_that_custom_routes_added_via_configure_api_are_accessible(SDKTest):
-    async def create_server(self, port: int) -> tuple[p.Server, Callable[[], p.Container]]:
-        test_container: p.Container = p.Container()
-
-        async def configure_container(container: p.Container) -> p.Container:
-            nonlocal test_container
-            test_container = container.clone()
-            return test_container
-
-        async def configure_api(app: FastAPI) -> None:
-            @app.get("/custom-endpoint")
-            async def custom_endpoint() -> dict[str, str]:
-                return {"message": "custom response"}
-
-        return p.Server(
-            port=port,
-            tool_service_port=get_random_port(),
-            log_level=p.LogLevel.TRACE,
-            configure_api=configure_api,
-        ), lambda: test_container
+    async def configure_api(self, app: FastAPI) -> None:
+        @app.get("/custom-endpoint")
+        async def custom_endpoint() -> dict[str, str]:
+            return {"message": "custom response"}
 
     async def setup(self, server: p.Server) -> None:
         pass
 
     async def run(self, ctx: Context) -> None:
-        # Make HTTP request to custom endpoint
         async with httpx.AsyncClient() as client:
             response = await client.get(f"http://localhost:{ctx.server.port}/custom-endpoint")
             assert response.status_code == 200
@@ -114,37 +72,20 @@ class Test_that_custom_routes_added_via_configure_api_are_accessible(SDKTest):
 class Test_that_configure_api_can_add_middleware(SDKTest):
     middleware_was_called = False
 
-    async def create_server(self, port: int) -> tuple[p.Server, Callable[[], p.Container]]:
-        test_container: p.Container = p.Container()
-
-        async def configure_container(container: p.Container) -> p.Container:
-            nonlocal test_container
-            test_container = container.clone()
-            return test_container
-
-        async def configure_api(app: FastAPI) -> None:
-            @app.middleware("http")
-            async def custom_middleware(
-                request: Request, call_next: Callable[[Request], Awaitable[Response]]
-            ) -> Response:
-                self.middleware_was_called = True
-                response = await call_next(request)
-                response.headers["X-Custom-Header"] = "test-value"
-                return response
-
-        return p.Server(
-            port=port,
-            tool_service_port=get_random_port(),
-            log_level=p.LogLevel.TRACE,
-            configure_container=configure_container,
-            configure_api=configure_api,
-        ), lambda: test_container
+    async def configure_api(self, app: FastAPI) -> None:
+        @app.middleware("http")
+        async def custom_middleware(
+            request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        ) -> Response:
+            self.middleware_was_called = True
+            response = await call_next(request)
+            response.headers["X-Custom-Header"] = "test-value"
+            return response
 
     async def setup(self, server: p.Server) -> None:
         pass
 
     async def run(self, ctx: Context) -> None:
-        # Make HTTP request to verify middleware was applied
         async with httpx.AsyncClient() as client:
             response = await client.get(f"http://localhost:{ctx.server.port}/healthz")
             assert response.status_code == 200
@@ -200,45 +141,11 @@ class Test_that_get_tag_raises_when_neither_id_nor_name_is_provided(SDKTest):
             await ctx.server.get_tag()
 
 
-class Test_that_server_works_without_configure_api(SDKTest):
-    async def create_server(self, port: int) -> tuple[p.Server, Callable[[], p.Container]]:
-        test_container: p.Container = p.Container()
-
-        async def configure_container(container: p.Container) -> p.Container:
-            nonlocal test_container
-            test_container = container.clone()
-            return test_container
-
-        # Create server without configure_api parameter
-        return p.Server(
-            port=port,
-            tool_service_port=get_random_port(),
-            log_level=p.LogLevel.TRACE,
-            configure_container=configure_container,
-        ), lambda: test_container
-
-    async def setup(self, server: p.Server) -> None:
-        pass
-
-    async def run(self, ctx: Context) -> None:
-        # Verify server works normally without configure_api
-        assert isinstance(ctx.server.api, FastAPI)
-
-        # Verify health endpoint still works
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"http://localhost:{ctx.server.port}/healthz")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] in ("healthy", "degraded", "unhealthy")
-
-
 class Test_that_indexer_runs_during_server_startup_with_full_payload(SDKTest):
     captured_payload: Mapping[str, Mapping[str, IndexRequest]] | None = None
     call_count: int = 0
 
-    async def create_server(self, port: int) -> tuple[p.Server, Callable[[], p.Container]]:
-        test_container: p.Container = p.Container()
-
+    async def configure_container(self, container: p.Container) -> p.Container:
         outer = self
 
         class _RecordingIndexer(Indexer):
@@ -254,27 +161,8 @@ class Test_that_indexer_runs_during_server_startup_with_full_payload(SDKTest):
                 if total > 0:
                     await progress_report.increment(total)
 
-        async def configure_container(container: p.Container) -> p.Container:
-            nonlocal test_container
-            test_container = container.clone()
-            test_container[Indexer] = _RecordingIndexer(
-                agent_store=test_container[AgentStore],
-                guideline_store=test_container[GuidelineStore],
-                journey_store=test_container[JourneyStore],
-                relationship_store=test_container[RelationshipStore],
-                glossary_store=test_container[GlossaryStore],
-                context_variable_store=test_container[ContextVariableStore],
-                canned_response_store=test_container[CannedResponseStore],
-                service_registry=test_container[ServiceRegistry],
-            )
-            return test_container
-
-        return p.Server(
-            port=port,
-            tool_service_port=get_random_port(),
-            log_level=p.LogLevel.TRACE,
-            configure_container=configure_container,
-        ), lambda: test_container
+        container[Indexer] = _RecordingIndexer
+        return container
 
     async def setup(self, server: p.Server) -> None:
         agent = await server.create_agent(

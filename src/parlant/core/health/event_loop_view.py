@@ -18,7 +18,7 @@ from typing import Mapping, Sequence
 
 from parlant.core.event_loop_monitor import EventLoopHealth, EventLoopMonitor
 from parlant.core.health.reporter import (
-    Criticality,
+    StatusCriticality,
     HealthReport,
     OverallHealth,
     ViewSnapshot,
@@ -40,7 +40,7 @@ class EventLoopHealthView:
     """
 
     name = "event_loop"
-    criticality = Criticality.CRITICAL
+    criticality = StatusCriticality.CRITICAL
     kinds: tuple[str, ...] = ()
 
     def __init__(self, monitor: EventLoopMonitor) -> None:

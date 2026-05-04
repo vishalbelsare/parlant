@@ -32,8 +32,10 @@ from enum import Enum
 from threading import Lock
 from typing import Any, Mapping, Protocol, Sequence
 
+from parlant.core.application_context import ApplicationContext
 
-class Criticality(str, Enum):
+
+class StatusCriticality(str, Enum):
     """Whether a view's status contributes to the overall ``/healthz`` rollup."""
 
     CRITICAL = "critical"
@@ -88,7 +90,7 @@ class HealthView(Protocol):
     """A read-side view that interprets reports of one or more kinds."""
 
     name: str
-    criticality: Criticality
+    criticality: StatusCriticality
     kinds: tuple[str, ...]
 
     def render(
@@ -157,9 +159,11 @@ class HealthReporter:
 
     def __init__(
         self,
+        application_context: ApplicationContext,
         *,
         snapshot_cache_ttl: timedelta = _DEFAULT_SNAPSHOT_CACHE_TTL,
     ) -> None:
+        self._application_context = application_context
         self._retention: dict[str, ReportRetention] = {}
         self._buffers: dict[str, deque[HealthReport]] = defaultdict(deque)
         self._counters: dict[str, RollingCounter] = {}
@@ -257,11 +261,15 @@ class HealthReporter:
         for view, by_kind in buffers_by_view:
             rendered = view.render(by_kind)
             checks[view.name] = {"status": rendered.status.value, **rendered.body}
-            if view.criticality is Criticality.CRITICAL:
+            if view.criticality is StatusCriticality.CRITICAL:
                 if _RANK[rendered.status] > _RANK[overall]:
                     overall = rendered.status
 
-        result = {"status": overall.value, "checks": checks}
+        result = {
+            "instance_id": self._application_context.instance_id,
+            "status": overall.value,
+            "checks": checks,
+        }
 
         with self._lock:
             self._cached_snapshot = result

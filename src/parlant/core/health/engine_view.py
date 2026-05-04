@@ -24,7 +24,7 @@ from datetime import timedelta
 from typing import Any, Mapping, Sequence
 
 from parlant.core.health.reporter import (
-    Criticality,
+    StatusCriticality,
     HealthReport,
     HealthReporter,
     OverallHealth,
@@ -57,7 +57,7 @@ class EngineHealthView:
     """Renders engine processing health from turn outcomes and TTFM samples."""
 
     name = "engine"
-    criticality = Criticality.CRITICAL
+    criticality = StatusCriticality.CRITICAL
     kinds: tuple[str, ...] = (ENGINE_TURN_KIND, ENGINE_TTFM_KIND)
 
     # Report attribute keys — producers and the renderer share these.
@@ -123,8 +123,7 @@ class EngineHealthView:
         ttfms = [
             float(r.attributes[self.ATTR_TTFM_MS])
             for r in ttfm_reports
-            if self.ATTR_TTFM_MS in r.attributes
-            and r.attributes[self.ATTR_TTFM_MS] is not None
+            if self.ATTR_TTFM_MS in r.attributes and r.attributes[self.ATTR_TTFM_MS] is not None
         ]
         p50_ttfm = _percentile(ttfms, 0.5)
         p95_ttfm = _percentile(ttfms, 0.95)

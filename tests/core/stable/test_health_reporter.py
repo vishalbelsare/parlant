@@ -17,8 +17,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
+from parlant.core.application_context import ApplicationContext
 from parlant.core.health import (
-    Criticality,
+    StatusCriticality,
     HealthReport,
     HealthReporter,
     NLP_EMBED_KIND,
@@ -31,6 +32,8 @@ from parlant.core.health import (
 from parlant.core.health.nlp_view import SchemaThresholds
 from parlant.core.health.reporter import RollingCounter
 
+_TEST_APP_CONTEXT = ApplicationContext(instance_id="test-instance")
+
 
 @dataclass
 class _RecordingView:
@@ -38,7 +41,7 @@ class _RecordingView:
 
     name: str
     kinds: tuple[str, ...]
-    criticality: Criticality = Criticality.CRITICAL
+    criticality: StatusCriticality = StatusCriticality.CRITICAL
     fixed_status: OverallHealth = OverallHealth.HEALTHY
     last_seen: dict[str, Sequence[HealthReport]] = field(default_factory=dict)
 
@@ -58,7 +61,7 @@ def _retention(seconds: float = 60.0, max_count: int = 1000) -> ReportRetention:
 
 
 async def test_that_a_reported_kind_is_visible_to_views_consuming_that_kind() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
     reporter.configure_retention("nlp.request", _retention())
     view = _RecordingView(name="nlp", kinds=("nlp.request",))
     reporter.register_view(view)
@@ -74,7 +77,7 @@ async def test_that_a_reported_kind_is_visible_to_views_consuming_that_kind() ->
 
 
 async def test_that_a_view_does_not_see_kinds_it_did_not_declare() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
     reporter.configure_retention("nlp.request", _retention())
     reporter.configure_retention("doc_store.query", _retention())
 
@@ -91,7 +94,7 @@ async def test_that_a_view_does_not_see_kinds_it_did_not_declare() -> None:
 
 
 async def test_that_reports_older_than_the_window_are_pruned_on_next_write() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
     reporter.configure_retention(
         "k", ReportRetention(window=timedelta(milliseconds=50), max_count=1000)
     )
@@ -112,7 +115,7 @@ async def test_that_reports_older_than_the_window_are_pruned_on_next_write() -> 
 
 
 async def test_that_reports_beyond_max_count_are_pruned_oldest_first() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
     reporter.configure_retention("k", ReportRetention(window=timedelta(seconds=60), max_count=3))
     view = _RecordingView(name="v", kinds=("k",))
     reporter.register_view(view)
@@ -127,7 +130,7 @@ async def test_that_reports_beyond_max_count_are_pruned_oldest_first() -> None:
 
 
 async def test_that_each_kind_has_independent_retention() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
     reporter.configure_retention("a", ReportRetention(window=timedelta(seconds=60), max_count=2))
     reporter.configure_retention("b", ReportRetention(window=timedelta(seconds=60), max_count=10))
     view = _RecordingView(name="v", kinds=("a", "b"))
@@ -145,7 +148,7 @@ async def test_that_each_kind_has_independent_retention() -> None:
 
 
 async def test_that_overall_status_is_worst_of_critical_views() -> None:
-    reporter = HealthReporter(snapshot_cache_ttl=timedelta(0))
+    reporter = HealthReporter(_TEST_APP_CONTEXT, snapshot_cache_ttl=timedelta(0))
     reporter.configure_retention("k", _retention())
 
     healthy = _RecordingView(name="healthy", kinds=("k",), fixed_status=OverallHealth.HEALTHY)
@@ -163,7 +166,7 @@ async def test_that_overall_status_is_worst_of_critical_views() -> None:
 
 
 async def test_that_snapshot_is_cached_within_the_cache_ttl() -> None:
-    reporter = HealthReporter(snapshot_cache_ttl=timedelta(seconds=60))
+    reporter = HealthReporter(_TEST_APP_CONTEXT, snapshot_cache_ttl=timedelta(seconds=60))
     reporter.configure_retention("k", _retention())
     view = _RecordingView(name="v", kinds=("k",), fixed_status=OverallHealth.HEALTHY)
     reporter.register_view(view)
@@ -183,7 +186,7 @@ async def test_that_snapshot_is_cached_within_the_cache_ttl() -> None:
 
 
 async def test_that_snapshot_recomputes_after_cache_ttl_expires() -> None:
-    reporter = HealthReporter(snapshot_cache_ttl=timedelta(milliseconds=50))
+    reporter = HealthReporter(_TEST_APP_CONTEXT, snapshot_cache_ttl=timedelta(milliseconds=50))
     reporter.configure_retention("k", _retention())
     view = _RecordingView(name="v", kinds=("k",), fixed_status=OverallHealth.HEALTHY)
     reporter.register_view(view)
@@ -201,19 +204,19 @@ async def test_that_snapshot_recomputes_after_cache_ttl_expires() -> None:
 
 
 async def test_that_informational_views_appear_in_body_but_do_not_affect_overall_status() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
     reporter.configure_retention("k", _retention())
 
     critical_healthy = _RecordingView(
         name="critical_healthy",
         kinds=("k",),
-        criticality=Criticality.CRITICAL,
+        criticality=StatusCriticality.CRITICAL,
         fixed_status=OverallHealth.HEALTHY,
     )
     informational_unhealthy = _RecordingView(
         name="cost",
         kinds=("k",),
-        criticality=Criticality.INFORMATIONAL,
+        criticality=StatusCriticality.INFORMATIONAL,
         fixed_status=OverallHealth.UNHEALTHY,
     )
 
@@ -227,7 +230,7 @@ async def test_that_informational_views_appear_in_body_but_do_not_affect_overall
 
 
 async def test_that_concurrent_reports_from_many_coroutines_are_all_recorded() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
     reporter.configure_retention(
         "k", ReportRetention(window=timedelta(seconds=60), max_count=10_000)
     )
@@ -249,7 +252,7 @@ async def test_that_concurrent_reports_from_many_coroutines_are_all_recorded() -
 
 
 async def test_that_a_kind_without_configured_retention_raises_on_report() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
 
     raised: type[BaseException] | None = None
     try:
@@ -311,7 +314,7 @@ def test_that_a_rolling_counter_per_minute_normalizes_by_window_minutes() -> Non
 
 
 def test_that_health_reporter_exposes_configured_counters() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
     reporter.configure_counter("nlp.tokens", retention=timedelta(days=1))
 
     reporter.increment_counter("nlp.tokens", 1234)
@@ -322,7 +325,7 @@ def test_that_health_reporter_exposes_configured_counters() -> None:
 
 
 def test_that_incrementing_an_unconfigured_counter_raises() -> None:
-    reporter = HealthReporter()
+    reporter = HealthReporter(_TEST_APP_CONTEXT)
     raised: type[BaseException] | None = None
     try:
         reporter.increment_counter("ghost", 1)

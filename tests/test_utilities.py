@@ -50,6 +50,7 @@ from parlant.adapters.db.json_file import JSONFileDocumentDatabase
 from parlant.adapters.nlp.openai_service import GPT_4o
 from parlant.core.agents import Agent, AgentId, AgentStore
 from parlant.core.application import Application
+from parlant.core.application_context import ApplicationContext
 from parlant.core.async_utils import Timeout
 from parlant.core.common import DefaultBaseModel, JSONSerializable, Version
 from parlant.core.context_variables import (
@@ -60,7 +61,7 @@ from parlant.core.context_variables import (
 )
 from parlant.core.customers import Customer, CustomerId, CustomerStore
 from parlant.core.engines.alpha.hooks import EngineHook, EngineHooks
-from parlant.core.health import HealthReporter, NullHealthReporter
+from parlant.core.health import NullHealthReporter
 from parlant.core.engines.alpha.engine_context import EngineContext
 from parlant.core.engines.alpha.prompt_builder import PromptBuilder
 from parlant.core.glossary import GlossaryStore, Term
@@ -179,7 +180,9 @@ async def nlp_test(context: str, condition: str) -> bool:
         logger=_TestLogger(),
         tracer=LocalTracer(),
         meter=LocalMeter(_TestLogger()),
-        health_reporter=NullHealthReporter(),
+        health_reporter=NullHealthReporter(
+            ApplicationContext(instance_id="test-instance"),
+        ),
     )
 
     inference = await schematic_generator.generate(
