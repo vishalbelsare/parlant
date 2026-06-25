@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ from typing_extensions import override
 from parlant.core.common import DefaultBaseModel, JSONSerializable
 from parlant.core.engines.alpha.guideline_matching.common import measure_guideline_matching_batch
 from parlant.core.engines.alpha.guideline_matching.generic.common import (
+    dump_guideline,
     internal_representation,
 )
 from parlant.core.engines.alpha.guideline_matching.guideline_match import (
@@ -130,17 +131,17 @@ class GenericObservationalGuidelineMatchingBatch(GuidelineMatchingBatch):
 
                     for match in inference.content.checks:
                         if self._match_applies(match):
-                            self._logger.debug(f"Activated:\n{match.model_dump_json(indent=2)}")
+                            self._logger.debug(f"Matched:\n{match.model_dump_json(indent=2)}")
 
                             matches.append(
                                 GuidelineMatch(
                                     guideline=self._guidelines[match.guideline_id],
                                     score=10 if match.applies else 1,
-                                    rationale=f'''Condition Application Rationale: "{match.rationale}"''',
+                                    rationale=match.rationale,
                                 )
                             )
                         else:
-                            self._logger.debug(f"Skipped:\n{match.model_dump_json(indent=2)}")
+                            self._logger.debug(f"Not matched:\n{match.model_dump_json(indent=2)}")
 
                     return GuidelineMatchingBatchResult(
                         matches=matches,
@@ -261,7 +262,7 @@ A guideline is not applicable when the customer explicitly sets aside or pauses 
 Similarly, if the conversation has progressed beyond the specific sub-topic mentioned in the condition and into a different aspect or next stage of the general topic, the condition no longer applies.
 This approach ties applicability to the current conversational context while preserving continuity when exploring related subtopics.
 
-Persistent Facts: Conditions about user characteristics or established facts (e.g., "the user is a senior citizen", "the customer has allergies") apply once established based on the information in this prompt, 
+Persistent Facts: Conditions about user characteristics or established facts (e.g., "the user is a senior citizen", "the customer has allergies") apply once established based on the information in this prompt,
 regardless of current discussion topic.
 
 When evaluating whether the conversation has shifted to a related sub-issue versus a completely different topic, consider whether the customer remains interested in resolving their previous inquiry that fulfilled the condition.
@@ -298,7 +299,10 @@ Examples of Condition Evaluations:
 {guidelines_text}
 ###
 """,
-            props={"guidelines_text": conditions_text},
+            props={
+                "guidelines_text": conditions_text,
+                "guidelines": [dump_guideline(g) for g in self._guidelines.values()],
+            },
             status=SectionStatus.ACTIVE,
         )
 
@@ -349,9 +353,7 @@ class ObservationalGuidelineMatching(GuidelineMatchingStrategy):
         context: GuidelineMatchingContext,
     ) -> Sequence[GuidelineMatchingBatch]:
         journeys = (
-            self._entity_queries.find_journeys_on_which_this_guideline_depends.get(
-                guidelines[0].id, []
-            )
+            self._entity_queries.guideline_and_journeys_it_depends_on.get(guidelines[0].id, [])
             if guidelines
             else []
         )
@@ -388,17 +390,14 @@ class ObservationalGuidelineMatching(GuidelineMatchingStrategy):
 
         return batches
 
-    def _get_optimal_batch_size(self, guidelines: dict[GuidelineId, Guideline]) -> int:
-        guideline_n = len(guidelines)
-
-        if guideline_n <= 10:
-            return 1
-        elif guideline_n <= 20:
-            return 2
-        elif guideline_n <= 30:
-            return 3
-        else:
-            return 5
+    def _get_optimal_batch_size(
+        self,
+        guidelines: dict[GuidelineId, Guideline],
+    ) -> int:
+        return self._optimization_policy.get_guideline_matching_batch_size(
+            len(guidelines),
+            hints={"type": GenericObservationalGuidelineMatchingBatch},
+        )
 
     def _create_batch(
         self,

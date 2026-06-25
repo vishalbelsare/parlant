@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -47,12 +47,18 @@ from parlant.core.tracer import Tracer
 from parlant.core.meter import Meter
 from parlant.core.nlp.policies import policy, retry
 from parlant.core.nlp.tokenization import EstimatingTokenizer
-from parlant.core.nlp.service import EmbedderHints, NLPService, SchematicGeneratorHints
+from parlant.core.nlp.service import (
+    EmbedderHints,
+    NLPService,
+    SchematicGeneratorHints,
+    StreamingTextGeneratorHints,
+)
 from parlant.core.nlp.embedding import BaseEmbedder, Embedder, EmbeddingResult
 from parlant.core.nlp.generation import (
     T,
     BaseSchematicGenerator,
     SchematicGenerationResult,
+    StreamingTextGenerator,
 )
 from parlant.core.nlp.generation_info import GenerationInfo, UsageInfo
 from parlant.core.nlp.moderation import (
@@ -61,6 +67,7 @@ from parlant.core.nlp.moderation import (
     ModerationCheck,
     ModerationTag,
 )
+from parlant.core.health import HealthReporter
 
 
 RATE_LIMIT_ERROR_MESSAGE = (
@@ -109,12 +116,11 @@ class ZhipuSchematicGenerator(BaseSchematicGenerator[T]):
     supported_zhipu_params = ["temperature", "max_tokens", "top_p"]
     supported_hints = supported_zhipu_params
 
-    def __init__(
-        self,
+    def __init__(self,
         model_name: str,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
         tokenizer_model_name: str | None = None,
     ) -> None:
         """Initialize the Zhipu AI schematic generator.
@@ -125,7 +131,7 @@ class ZhipuSchematicGenerator(BaseSchematicGenerator[T]):
             meter: Meter instance for metrics
             tokenizer_model_name: Optional model name for tokenizer (defaults to model_name)
         """
-        super().__init__(logger=logger, tracer=tracer, meter=meter, model_name=model_name)
+        super().__init__(logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter, model_name=model_name)
 
         self._client = ZhipuAI(api_key=os.environ["ZHIPUAI_API_KEY"])
 
@@ -278,14 +284,14 @@ class ZhipuSchematicGenerator(BaseSchematicGenerator[T]):
 class GLM_4_Plus(ZhipuSchematicGenerator[T]):
     """GLM-4-Plus model for high-performance tasks."""
 
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         """Initialize GLM-4-Plus model.
 
         Args:
             logger: Logger instance for logging operations
             meter: Meter instance for metrics
         """
-        super().__init__(model_name="glm-4-plus", logger=logger, tracer=tracer, meter=meter)
+        super().__init__(model_name="glm-4-plus", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter)
 
     @property
     @override
@@ -301,14 +307,14 @@ class GLM_4_Plus(ZhipuSchematicGenerator[T]):
 class GLM_4_Flash(ZhipuSchematicGenerator[T]):
     """GLM-4-Flash model for fast response tasks."""
 
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         """Initialize GLM-4-Flash model.
 
         Args:
             logger: Logger instance for logging operations
             meter: Meter instance for metrics
         """
-        super().__init__(model_name="glm-4-flash", logger=logger, tracer=tracer, meter=meter)
+        super().__init__(model_name="glm-4-flash", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter)
 
     @property
     @override
@@ -324,14 +330,14 @@ class GLM_4_Flash(ZhipuSchematicGenerator[T]):
 class GLM_4_Air(ZhipuSchematicGenerator[T]):
     """GLM-4-Air model for lightweight tasks."""
 
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         """Initialize GLM-4-Air model.
 
         Args:
             logger: Logger instance for logging operations
             meter: Meter instance for metrics
         """
-        super().__init__(model_name="glm-4-air", logger=logger, tracer=tracer, meter=meter)
+        super().__init__(model_name="glm-4-air", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter)
 
     @property
     @override
@@ -349,12 +355,11 @@ class ZhipuEmbedder(BaseEmbedder):
 
     supported_arguments = ["dimensions"]
 
-    def __init__(
-        self,
+    def __init__(self,
         model_name: str,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
         """Initialize the Zhipu AI embedder.
 
@@ -363,7 +368,7 @@ class ZhipuEmbedder(BaseEmbedder):
             logger: Logger instance for logging operations
             meter: Meter instance for metrics
         """
-        super().__init__(logger=logger, tracer=tracer, meter=meter, model_name=model_name)
+        super().__init__(logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter, model_name=model_name)
 
         self._client = ZhipuAI(api_key=os.environ["ZHIPUAI_API_KEY"])
 
@@ -443,14 +448,14 @@ class ZhipuEmbedder(BaseEmbedder):
 class Embedding_3(ZhipuEmbedder):
     """Embedding-3 model for generating text embeddings."""
 
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         """Initialize Embedding-3 model.
 
         Args:
             logger: Logger instance for logging operations
             meter: Meter instance for metrics
         """
-        super().__init__(model_name="embedding-3", logger=logger, tracer=tracer, meter=meter)
+        super().__init__(model_name="embedding-3", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter)
 
     @property
     @override
@@ -476,7 +481,7 @@ class Embedding_3(ZhipuEmbedder):
 class ZhipuModerationService(BaseModerationService):
     """Moderation service for detecting inappropriate content using Zhipu AI."""
 
-    def __init__(self, model_name: str, logger: Logger, meter: Meter) -> None:
+    def __init__(self, model_name: str, logger: Logger, meter: Meter, health_reporter: HealthReporter) -> None:
         """Initialize the Zhipu AI moderation service.
 
         Args:
@@ -484,7 +489,7 @@ class ZhipuModerationService(BaseModerationService):
             logger: Logger instance for logging operations
             meter: Meter instance for metrics
         """
-        super().__init__(logger, meter)
+        super().__init__(logger, meter, health_reporter)
 
         self.model_name = model_name
         self._client = ZhipuAI(api_key=os.environ["ZHIPUAI_API_KEY"])
@@ -584,11 +589,10 @@ To obtain an API key:
 
         return None
 
-    def __init__(
-        self,
+    def __init__(self,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
         """Initialize the Zhipu AI service.
 
@@ -599,7 +603,20 @@ To obtain an API key:
         self._logger = logger
         self._tracer = tracer
         self._meter = meter
+
+        self._health_reporter = health_reporter
         self._logger.info("Initialized ZhipuService")
+
+    @property
+    @override
+    def supports_streaming(self) -> bool:
+        return False
+
+    @override
+    async def get_streaming_text_generator(
+        self, hints: StreamingTextGeneratorHints = {}
+    ) -> StreamingTextGenerator:
+        raise NotImplementedError("Streaming is not supported. Check supports_streaming first.")
 
     @override
     async def get_schematic_generator(
@@ -618,7 +635,7 @@ To obtain an API key:
             JourneyBacktrackNodeSelectionSchema: GLM_4_Plus[JourneyBacktrackNodeSelectionSchema],
             CannedResponseDraftSchema: GLM_4_Plus[CannedResponseDraftSchema],
             CannedResponseSelectionSchema: GLM_4_Plus[CannedResponseSelectionSchema],
-        }.get(t, GLM_4_Flash[t])(self._logger, self._tracer, self._meter)  # type: ignore
+        }.get(t, GLM_4_Flash[t])(self._logger, self._tracer, self._meter, self._health_reporter)  # type: ignore
 
     @override
     async def get_embedder(self, hints: EmbedderHints = {}) -> Embedder:
@@ -627,7 +644,7 @@ To obtain an API key:
         Returns:
             An Embedding_3 embedder instance
         """
-        return Embedding_3(self._logger, self._tracer, self._meter)
+        return Embedding_3(self._logger, self._tracer, self._meter, self._health_reporter)
 
     @override
     async def get_moderation_service(self) -> BaseModerationService:
@@ -637,5 +654,8 @@ To obtain an API key:
             A ZhipuModerationService instance
         """
         return ZhipuModerationService(
-            model_name="moderation", logger=self._logger, meter=self._meter
+            model_name="moderation",
+            logger=self._logger,
+            meter=self._meter,
+            health_reporter=self._health_reporter,
         )

@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ from parlant.core.common import DefaultBaseModel, JSONSerializable
 from parlant.core.engines.alpha.guideline_matching.common import measure_response_analysis_batch
 from parlant.core.engines.alpha.guideline_matching.generic.common import (
     GuidelineInternalRepresentation,
+    dump_guideline,
     internal_representation,
 )
 from parlant.core.engines.alpha.guideline_matching.generic.guideline_actionable_batch import (
@@ -189,7 +190,7 @@ class GenericResponseAnalysisBatch(ResponseAnalysisBatch):
                                 )
                             )
                         else:
-                            self._logger.debug(f"Not applied:\n{check.model_dump_json(indent=2)}")
+                            self._logger.debug(f"Unapplied:\n{check.model_dump_json(indent=2)}")
                             analyzed_guidelines.append(
                                 AnalyzedGuideline(
                                     guideline=guidelines[GuidelineId(check.guideline_id)],
@@ -273,6 +274,11 @@ class GenericResponseAnalysisBatch(ResponseAnalysisBatch):
     ) -> str:
         guidelines_text = "\n".join(
             f"{i}) Condition: {guideline_representations[g.id].condition}. Action: {guideline_representations[g.id].action}"
+            + (
+                f" Description: {guideline_representations[g.id].description}"
+                if guideline_representations[g.id].description
+                else ""
+            )
             for i, g in guidelines.items()
         )
 
@@ -295,6 +301,8 @@ Guidelines:
         guideline_representations = {g.id: internal_representation(g) for g in guidelines.values()}
 
         builder = PromptBuilder(on_build=lambda prompt: self._logger.trace(f"Prompt:\n{prompt}"))
+
+        builder.add_agent_identity(self._context.agent)
 
         builder.add_section(
             name="guideline-previously-applied-general-instructions",
@@ -366,7 +374,6 @@ Examples of ...:
                 "shots": shots,
             },
         )
-        builder.add_agent_identity(self._context.agent)
         builder.add_context_variables(self._context.context_variables)
         builder.add_glossary(self._context.terms)
         builder.add_customer_identity(self._context.customer, self._context.session)
@@ -378,7 +385,9 @@ Examples of ...:
         builder.add_section(
             name=BuiltInSection.GUIDELINE_DESCRIPTIONS,
             template=self._add_guideline_matches_section(guidelines, guideline_representations),
-            props={},
+            props={
+                "guidelines": [dump_guideline(g) for g in guidelines.values()],
+            },
         )
 
         builder.add_section(

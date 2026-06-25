@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -164,12 +164,12 @@ ACTIONABLE_GUIDELINES_DICT = {
     "check_drinks_in_stock": {
         "condition": "a customer asks for a drink",
         "action": "check if the drink is available in the following stock: "
-        "['Sprite', 'Coke', 'Fanta']",
+        "['Sprite', 'Coke', 'Fanta']. Assume that if a drink is on stock, we have enough of it",
     },
     "check_toppings_in_stock": {
         "condition": "a customer asks for toppings",
         "action": "check if the toppings are available in the following stock: "
-        "['Pepperoni', 'Tomatoes', 'Olives']",
+        "['Pepperoni', 'Tomatoes', 'Olives']. Assume that if a topping is on stock, we have enough of it",
     },
     "payment_process": {
         "condition": "a customer is in the payment process",
@@ -333,6 +333,15 @@ ACTIONABLE_GUIDELINES_DICT = {
     "replace_card": {
         "condition": "The user wants to replace their card",
         "action": "List the cards and then assist the user to replace their card until matter is resolved",
+    },
+    "special_character_condition": {
+        "condition": """The customer wishes to speak to either:
+    1. a human agent
+    2. A doctor / nurse / other medical professional
+    3. a customer service representative
+        """,
+        "action": """Instruct them to call our office at this number:
+        123-453-1212 and then choose "/" to speak with a human agent""",
     },
 }
 
@@ -980,13 +989,13 @@ async def test_that_guidelines_are_matched_based_on_glossary(
         create_term(
             name="skateboard",
             description="a time-traveling device",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
         create_term(
             name="Pinewood Rash Syndrome",
             description="allergy to pinewood trees",
             synonyms=["Pine Rash", "PRS"],
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
     ]
     conversation_context: list[tuple[EventSource, str]] = [
@@ -1168,17 +1177,17 @@ async def test_that_guidelines_are_matched_based_on_staged_tool_calls_and_contex
         create_context_variable(
             name="user_id_1",
             data={"name": "Jimmy McGill", "ID": 566317},
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
         create_context_variable(
             name="user_id_2",
             data={"name": "Bob Bobberson", "ID": 199877},
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
         create_context_variable(
             name="user_id_3",
             data={"name": "Dorothy Dortmund", "ID": 816779},
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
     ]
     conversation_guideline_names: list[str] = ["suggest_drink_underage", "suggest_drink_adult"]
@@ -1849,7 +1858,7 @@ async def test_that_irrelevant_observational_guidelines_are_not_detected_2(
         create_context_variable(
             name="customer_location",
             data={"location": "Australia"},
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
     ]
 
@@ -2026,12 +2035,12 @@ async def test_that_observational_guidelines_are_detected_based_on_context_varia
         create_context_variable(
             name="user_id_1",
             data={"name": "Jimmy McGill", "ID": 566317},
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
         create_context_variable(
             name="season",
             data={"season": "Winter"},
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
     ]
 
@@ -2122,7 +2131,7 @@ async def test_that_observational_guidelines_are_matched_based_on_glossary(
         create_term(
             name="play the old tambourine",
             description="local slang for getting your order delivered to your home",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
     ]
 
@@ -2478,7 +2487,7 @@ async def test_that_both_observational_and_actionable_guidelines_are_matched_tog
         create_context_variable(
             name="season",
             data={"season": "Spring"},
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ),
     ]
 
@@ -3480,4 +3489,25 @@ async def test_that_a_guideline_that_has_several_steps_is_still_matched(
         conversation_guideline_names,
         relevant_guideline_names=relevant_guideline_names,
         previously_matched_guidelines_names=previously_matched_guidelines_names,
+    )
+
+
+async def test_that_condition_with_special_characters_causes_no_errors(
+    context: ContextOfTest,
+    agent: Agent,
+    new_session: Session,
+    customer: Customer,
+) -> None:
+    conversation_context: list[tuple[EventSource, str]] = [
+        (EventSource.CUSTOMER, "I want to talk to a nurse!!!"),
+    ]
+    conversation_guideline_names: list[str] = ["special_character_condition"]
+    await base_test_that_correct_guidelines_are_matched(
+        context,
+        agent,
+        customer,
+        new_session.id,
+        conversation_context,
+        conversation_guideline_names=conversation_guideline_names,
+        relevant_guideline_names=conversation_guideline_names,
     )

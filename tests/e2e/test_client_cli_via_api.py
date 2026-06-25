@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ REASONABLE_AMOUNT_OF_TIME_FOR_TERM_CREATION = 0.25
 
 async def run_cli(*args: str, address: str = SERVER_ADDRESS, **kwargs: Any) -> subprocess.Process:
     exec_args = [
-        "poetry",
+        "uv",
         "run",
         "python",
         CLI_CLIENT_PATH.as_posix(),
@@ -53,7 +53,7 @@ async def run_cli(*args: str, address: str = SERVER_ADDRESS, **kwargs: Any) -> s
 
 async def run_cli_and_get_exit_status(*args: str, address: str = SERVER_ADDRESS) -> int:
     exec_args = [
-        "poetry",
+        "uv",
         "run",
         "python",
         CLI_CLIENT_PATH.as_posix(),

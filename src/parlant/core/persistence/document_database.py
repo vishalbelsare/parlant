@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -96,6 +96,15 @@ class DeleteResult(Generic[TDocument]):
     deleted_document: Optional[TDocument]
 
 
+CollectionSort = Sequence[tuple[str, SortDirection]]
+
+
+@dataclass(frozen=True)
+class CollectionIndex:
+    fields: CollectionSort
+    unique: bool = False
+
+
 async def identity_loader(doc: BaseDocument) -> BaseDocument:
     return doc
 
@@ -172,8 +181,17 @@ class DocumentCollection(ABC, Generic[TDocument]):
     async def find_one(
         self,
         filters: Where,
+        sort: Optional[CollectionSort] = None,
     ) -> Optional[TDocument]:
         """Returns the first document that matches the query criteria."""
+        ...
+
+    @abstractmethod
+    async def ensure_indexes(
+        self,
+        indexes: Sequence[CollectionIndex],
+    ) -> None:
+        """Ensures the requested indexes exist for the collection."""
         ...
 
     @abstractmethod

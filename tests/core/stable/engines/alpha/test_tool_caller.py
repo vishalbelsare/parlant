@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -157,6 +157,7 @@ async def _inference_tool_calls_result(
     tool_enabled_guideline_matches: Mapping[GuidelineMatch, Sequence[ToolId]],
     tool_context_obj: ToolContext | None = None,
     staged_events: Sequence[EmittedEvent] | None = None,
+    ordinary_guideline_matches: Sequence[GuidelineMatch] | None = None,
 ) -> ToolCallInferenceResult:
     tool_caller = container[ToolCaller]
 
@@ -169,7 +170,7 @@ async def _inference_tool_calls_result(
         context_variables=[],
         interaction_history=interaction_history,
         terms=[],
-        ordinary_guideline_matches=[],
+        ordinary_guideline_matches=list(ordinary_guideline_matches or []),
         tool_enabled_guideline_matches=tool_enabled_guideline_matches,
         journeys=[],
         staged_events=staged_events or [],
@@ -209,7 +210,7 @@ async def test_that_a_tool_from_a_local_service_gets_called_with_an_enum_paramet
             action="a customer asks for the availability of products from a certain category",
             score=9,
             rationale="customer asks for keyboards availability",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="local", tool_name=tool.name)]
     }
 
@@ -263,7 +264,7 @@ async def test_that_a_tool_from_a_plugin_gets_called_with_an_enum_parameter(
             action="a customer asks for the availability of products from a certain category",
             score=9,
             rationale="customer asks for keyboards availability",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_sdk_service", tool_name="available_products_by_category")]
     }
 
@@ -323,7 +324,7 @@ async def test_that_a_plugin_tool_is_called_with_required_parameters_with_defaul
         return ToolResult(f"Scheduled {type_display} appointment in {room.value} at {when}")
 
     conversation_context = [
-        (EventSource.CUSTOMER, "I want to set up an appointment tomorrow at 10am"),
+        (EventSource.CUSTOMER, "I want to set up an appointment tomorrow (10.26.23) at 10am"),
     ]
 
     interaction_history = create_interaction_history(conversation_context)
@@ -334,7 +335,7 @@ async def test_that_a_plugin_tool_is_called_with_required_parameters_with_defaul
             action="schedule an appointment for the customer",
             score=9,
             rationale="customer wants to schedule some kind of an appointment",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_appointment_service", tool_name="schedule_appointment")]
     }
 
@@ -393,7 +394,7 @@ async def test_that_a_tool_from_a_plugin_gets_called_with_an_enum_list_parameter
             action="a customer asks for the availability of products from a certain category",
             score=9,
             rationale="customer asks for keyboards availability",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_sdk_service", tool_name="available_products_by_category")]
     }
 
@@ -462,7 +463,7 @@ async def test_that_a_tool_is_called_with_typing_lists(
             action="a customer asks for the availability of products from a certain category",
             score=9,
             rationale="customer asks for keyboards availability",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_sdk_service", tool_name="available_products_by_category")]
     }
 
@@ -530,7 +531,7 @@ async def test_that_a_tool_from_a_plugin_gets_called_with_a_parameter_attached_t
             action="a customer asks for the availability of products from a certain category",
             score=9,
             rationale="customer asks for keyboards availability",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_sdk_service", tool_name="available_products_by_category")]
     }
 
@@ -620,7 +621,7 @@ async def test_that_a_tool_with_a_parameter_attached_to_a_choice_provider_gets_t
             action="a customer asks for the availability of products from a certain category or categories",
             score=9,
             rationale="customer wants to know what products are available",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_sdk_service", tool_name="available_products_by_category")]
     }
 
@@ -708,7 +709,7 @@ async def test_that_a_tool_from_a_plugin_with_missing_parameters_returns_the_mis
             action="register the customer for the sweepstake using all provided information",
             score=9,
             rationale="customer wants to register for the sweepstake and provides all the relevant information",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_charlatan_service", tool_name="register_sweepstake")]
     }
 
@@ -767,7 +768,7 @@ async def test_that_a_tool_with_an_invalid_choice_provider_parameter_and_a_missi
             action="book a flight for the customer",
             score=9,
             rationale="customer wants to book a flight",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_sdk_service", tool_name="book_flight")]
     }
 
@@ -828,7 +829,7 @@ async def test_that_a_tool_with_an_invalid_enum_parameter_and_a_missing_paramete
             action="book a flight for the customer",
             score=9,
             rationale="customer wants to book a flight",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_sdk_service", tool_name="book_flight")]
     }
 
@@ -886,7 +887,7 @@ async def test_that_mcp_tool_with_uuid_path_timedelta_and_datetime_parameters_in
             action="report the update duration and relevant details",
             score=9,
             rationale="agent wants to report that a file update took a long time",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_mcp_service", tool_name="report_update_duration")]
     }
 
@@ -967,7 +968,7 @@ async def test_that_mcp_tool_with_optional_lists_of_enum_date_and_bool_can_run(
             action="prepare the birds for delivery as customer requested",
             score=9,
             rationale="customer wants to deliver a list of birds",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="my_mcp_service", tool_name="prepare_bird_delivery")]
     }
 
@@ -1107,14 +1108,14 @@ async def test_that_tool_calling_batchers_can_be_overridden(
             action="echo the customer's message",
             score=9,
             rationale="customer wants to echo their message",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [echo_tool_id],
         create_guideline_match(
             condition="customer asks to ping",
             action="ping the customer's message",
             score=9,
             rationale="customer wants to ping their message",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ping_tool_id],
     }
 
@@ -1165,21 +1166,21 @@ async def test_that_two_non_overlapping_tools_are_overlapping_with_a_third_tool_
             action="do a",
             score=9,
             rationale="customer wants to a",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [a_tool_id],
         create_guideline_match(
             condition="customer asks to b",
             action="do b",
             score=9,
             rationale="customer wants to b",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [b_tool_id],
         create_guideline_match(
             condition="customer asks to c",
             action="do c",
             score=9,
             rationale="customer wants to c",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [c_tool_id],
     }
 
@@ -1269,14 +1270,14 @@ async def test_that_a_tool_with_unmatched_guideline_is_not_included_in_the_evalu
             action="do a",
             score=9,
             rationale="customer wants to a",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [a_tool_id],
         create_guideline_match(
             condition="customer asks to c",
             action="do c",
             score=9,
             rationale="customer wants to c",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [c_tool_id],
     }
 
@@ -1360,7 +1361,7 @@ async def test_that_non_consequential_tool_with_no_parameters_is_auto_approved_w
             action="ping for the customer",
             score=9,
             rationale="customer wants to ping",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="local", tool_name=tool.name)]
     }
 
@@ -1433,7 +1434,7 @@ async def test_that_staged_non_consequential_tool_with_no_parameters_is_not_auto
             action="ping for the customer",
             score=9,
             rationale="customer wants to ping",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [tool_id]
     }
 
@@ -1482,7 +1483,7 @@ async def test_that_non_consequential_tool_with_parameters_uses_simplified_mode(
             action="get the weather for the requested city",
             score=9,
             rationale="customer wants weather info",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="local", tool_name=tool.name)]
     }
 
@@ -1502,9 +1503,9 @@ async def test_that_non_consequential_tool_with_parameters_uses_simplified_mode(
     city_value = str(tool_call.arguments["city"])
     assert city_value.lower() == "paris"
 
-    # Verify simplified mode was used (schema name should be SimpleToolBatchSchema)
+    # Verify simplified mode was used (schema name should be NonConsequentialToolBatchSchema)
     assert len(inference_tool_calls_result.batch_generations) == 1
-    assert "Simple" in inference_tool_calls_result.batch_generations[0].schema_name
+    assert "NonConsequential" in inference_tool_calls_result.batch_generations[0].schema_name
 
 
 async def test_that_consequential_tool_with_parameters_uses_full_mode(
@@ -1539,7 +1540,7 @@ async def test_that_consequential_tool_with_parameters_uses_full_mode(
             action="transfer money to the specified recipient",
             score=9,
             rationale="customer wants to transfer money",
-            tags=[Tag.for_agent_id(agent.id)],
+            tags=[Tag.for_agent_id(agent.id).id],
         ): [ToolId(service_name="local", tool_name=tool.name)]
     }
 
@@ -1554,3 +1555,58 @@ async def test_that_consequential_tool_with_parameters_uses_full_mode(
     assert len(inference_tool_calls_result.batch_generations) == 1
     assert "Simple" not in inference_tool_calls_result.batch_generations[0].schema_name
     assert "SingleToolBatchSchema" in inference_tool_calls_result.batch_generations[0].schema_name
+
+
+async def test_that_a_tool_call_is_deferred_when_an_ordinary_guideline_requires_user_confirmation_first(
+    container: Container,
+    local_tool_service: LocalToolService,
+    agent: Agent,
+) -> None:
+    tool = await create_local_tool(
+        local_tool_service,
+        name="transfer_money",
+        parameters={
+            "amount": {"type": "integer"},
+            "from_account": {"type": "string"},
+            "to_account": {"type": "string"},
+        },
+        required=["amount", "from_account", "to_account"],
+    )
+
+    conversation_context = [
+        (EventSource.CUSTOMER, "Please transfer $500 from my checking to John's account."),
+    ]
+    interaction_history = create_interaction_history(conversation_context)
+
+    tool_enabled_guideline_matches = {
+        create_guideline_match(
+            condition="the user wants to transfer money",
+            action="run transfer_money with the requested amount and accounts",
+            score=9,
+            rationale="customer asked to transfer $500 to John's account",
+            tags=[Tag.for_agent_id(agent.id).id],
+        ): [ToolId(service_name="local", tool_name=tool.name)]
+    }
+
+    ordinary_guideline_matches = [
+        create_guideline_match(
+            condition="you are about to transfer money",
+            action="first get the user's clear and explicit confirmation before continuing",
+            score=10,
+            rationale="confirmation must be obtained before any money transfer",
+            tags=[Tag.for_agent_id(agent.id).id],
+        )
+    ]
+
+    inference_tool_calls_result = await _inference_tool_calls_result(
+        container=container,
+        agent=agent,
+        interaction_history=interaction_history,
+        tool_enabled_guideline_matches=tool_enabled_guideline_matches,
+        ordinary_guideline_matches=ordinary_guideline_matches,
+    )
+
+    tool_calls = list(chain.from_iterable(inference_tool_calls_result.batches))
+    assert len(tool_calls) == 0, (
+        f"Expected transfer_money to be deferred until confirmation, got {tool_calls}"
+    )

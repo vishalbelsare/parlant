@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -67,9 +67,7 @@ async def test_that_no_action_is_proposed_when_guideline_already_contains_action
         tool_ids=[],
     )
 
-    assert result
-    assert result.content == guideline
-    assert result.rationale == "No action proposed"
+    assert result is None
 
 
 async def test_that_action_is_proposed_when_guideline_lacks_action_and_tools_are_supplied(

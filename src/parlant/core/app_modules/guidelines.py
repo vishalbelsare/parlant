@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from itertools import chain
-from typing import Mapping, Sequence, cast
+from typing import Mapping, Sequence, Set, cast
 
 from parlant.core.agents import AgentId, AgentStore, CompositionMode
 from parlant.core.common import Criticality, ItemNotFoundError, JSONSerializable, UniqueId
@@ -38,6 +38,12 @@ class GuidelineTagsUpdateParams:
 class GuidelineToolAssociationUpdateParams:
     add: Sequence[ToolId] | None = None
     remove: Sequence[ToolId] | None = None
+
+
+@dataclass(frozen=True)
+class GuidelineLabelsUpdateParams:
+    upsert: Set[str] | None = None
+    remove: Set[str] | None = None
 
 
 @dataclass
@@ -84,12 +90,16 @@ class GuidelineModule:
         condition: str,
         action: str | None,
         description: str | None,
+        title: str | None,
         criticality: Criticality | None,
         metadata: Mapping[str, JSONSerializable] | None,
         enabled: bool | None,
         tags: Sequence[TagId] | None,
         id: GuidelineId | None = None,
         composition_mode: CompositionMode | None = None,
+        track: bool = True,
+        labels: Set[str] | None = None,
+        priority: int = 0,
     ) -> Guideline:
         if tags:
             for tag_id in tags:
@@ -101,12 +111,16 @@ class GuidelineModule:
             condition=condition,
             action=action,
             description=description,
+            title=title,
             criticality=criticality,
             metadata=metadata or {},
             enabled=enabled or True,
             tags=tags,
             id=id,
             composition_mode=composition_mode,
+            track=track,
+            labels=labels,
+            priority=priority,
         )
 
         return guideline
@@ -134,12 +148,15 @@ class GuidelineModule:
         condition: str | None,
         action: str | None,
         description: str | None,
+        title: str | None,
         criticality: Criticality | None,
         tool_associations: GuidelineToolAssociationUpdateParams | None,
         enabled: bool | None,
         tags: GuidelineTagsUpdateParams | None,
         metadata: GuidelineMetadataUpdateParams | None,
         composition_mode: CompositionMode | None = None,
+        labels: GuidelineLabelsUpdateParams | None = None,
+        priority: int | None = None,
     ) -> Guideline:
         _ = await self._guideline_store.read_guideline(guideline_id=guideline_id)
 
@@ -147,9 +164,11 @@ class GuidelineModule:
             condition
             or action
             or description is not None
+            or title is not None
             or criticality is not None
             or enabled is not None
             or composition_mode is not None
+            or priority is not None
         ):
             update_params: GuidelineUpdateParams = {}
             if condition:
@@ -158,12 +177,16 @@ class GuidelineModule:
                 update_params["action"] = action
             if description is not None:
                 update_params["description"] = description
+            if title is not None:
+                update_params["title"] = title
             if criticality is not None:
                 update_params["criticality"] = criticality
             if enabled is not None:
                 update_params["enabled"] = enabled
             if composition_mode is not None:
                 update_params["composition_mode"] = composition_mode
+            if priority is not None:
+                update_params["priority"] = priority
 
             await self._guideline_store.update_guideline(
                 guideline_id=guideline_id,
@@ -243,6 +266,19 @@ class GuidelineModule:
                         tag_id=tag_id,
                     )
 
+        if labels:
+            if labels.upsert:
+                await self._guideline_store.upsert_labels(
+                    guideline_id=guideline_id,
+                    labels=labels.upsert,
+                )
+
+            if labels.remove:
+                await self._guideline_store.remove_labels(
+                    guideline_id=guideline_id,
+                    labels=labels.remove,
+                )
+
         guideline = await self._guideline_store.read_guideline(guideline_id=guideline_id)
 
         return guideline
@@ -270,11 +306,11 @@ class GuidelineModule:
 
         journeys = await self._journey_store.list_journeys()
         for journey in journeys:
-            for condition in journey.conditions:
-                if condition == guideline_id:
-                    await self._journey_store.remove_condition(
+            for trigger in journey.triggers:
+                if trigger == guideline_id:
+                    await self._journey_store.remove_trigger(
                         journey_id=journey.id,
-                        condition=condition,
+                        trigger=trigger,
                     )
 
         await self._guideline_store.delete_guideline(guideline_id=guideline_id)
@@ -293,7 +329,7 @@ class GuidelineModule:
                 return await self._guideline_store.read_guideline(
                     guideline_id=cast(GuidelineId, entity_id)
                 )
-            elif entity_type == RelationshipEntityKind.TAG:
+            elif entity_type.is_tag:
                 return await self._tag_store.read_tag(tag_id=cast(TagId, entity_id))
             else:
                 raise ValueError(f"Unsupported entity type: {entity_type}")
@@ -312,8 +348,8 @@ class GuidelineModule:
                 target_id=entity_id,
             ),
         ):
-            assert r.source.kind in (RelationshipEntityKind.GUIDELINE, RelationshipEntityKind.TAG)
-            assert r.target.kind in (RelationshipEntityKind.GUIDELINE, RelationshipEntityKind.TAG)
+            assert r.source.kind == RelationshipEntityKind.GUIDELINE or r.source.kind.is_tag
+            assert r.target.kind == RelationshipEntityKind.GUIDELINE or r.target.kind.is_tag
             assert type(r.kind) is RelationshipKind
 
             relationships.append(

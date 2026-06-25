@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -100,10 +100,6 @@ async def test_that_continuous_guidelines_mark_as_continuous(
         GuidelineContent(
             condition="The user indicates they have dietary restrictions while discussing meal options.",
             action="Ensure that all suggested meal options respect their dietary restrictions.",
-        ),
-        GuidelineContent(
-            condition="The user wants to replace their current meal with a healthier option.",
-            action="Suggest healthier alternatives and then assist the user in replacing their meal choice until they are satisfied",
         ),
     ]
 

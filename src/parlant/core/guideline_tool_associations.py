@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -98,7 +98,7 @@ class GuidelineToolAssociationDocumentStore(GuidelineToolAssociationStore):
         self,
         doc: BaseDocument,
     ) -> Optional[_GuidelineToolAssociationDocument]:
-        if doc["version"] == "0.1.0":
+        if Version.from_string(doc["version"]) >= Version.from_string("0.1.0"):
             return cast(_GuidelineToolAssociationDocument, doc)
         return None
 

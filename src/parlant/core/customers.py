@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,12 +21,13 @@ from typing_extensions import override, TypedDict, Self
 from parlant.core.async_utils import ReaderWriterLock
 from parlant.core.persistence.document_database_helper import DocumentStoreMigrationHelper
 from parlant.core.tags import TagId
-from parlant.core.common import ItemNotFoundError, UniqueId, Version, IdGenerator, md5_checksum
+from parlant.core.common import ItemNotFoundError, UniqueId, Version, IdGenerator, xxh3_checksum
 from parlant.core.persistence.common import Cursor, ObjectId, SortDirection, Where
 from parlant.core.persistence.document_database import (
     BaseDocument,
-    DocumentDatabase,
+    CollectionIndex,
     DocumentCollection,
+    DocumentDatabase,
 )
 
 CustomerId = NewType("CustomerId", str)
@@ -116,7 +117,7 @@ class CustomerStore(ABC):
     ) -> None: ...
 
     @abstractmethod
-    async def add_extra(
+    async def upsert_extra(
         self,
         customer_id: CustomerId,
         extra: Mapping[str, str],
@@ -166,7 +167,7 @@ class CustomerDocumentStore(CustomerStore):
         self._lock = ReaderWriterLock()
 
     async def _document_loader(self, doc: BaseDocument) -> Optional[_CustomerDocument]:
-        if doc["version"] == "0.1.0":
+        if Version.from_string(doc["version"]) >= Version.from_string("0.1.0"):
             return cast(_CustomerDocument, doc)
 
         return None
@@ -184,7 +185,7 @@ class CustomerDocumentStore(CustomerStore):
                 tag_id=doc["tag_id"],
             )
 
-        if doc["version"] == "0.2.0":
+        if Version.from_string(doc["version"]) >= Version.from_string("0.2.0"):
             return cast(_CustomerTagAssociationDocument, doc)
 
         return None
@@ -205,6 +206,21 @@ class CustomerDocumentStore(CustomerStore):
                 name="customer_tag_associations",
                 schema=_CustomerTagAssociationDocument,
                 document_loader=self._association_document_loader,
+            )
+            await self._customers_collection.ensure_indexes(
+                [CollectionIndex(fields=(("id", SortDirection.ASC),))]
+            )
+            await self._tag_association_collection.ensure_indexes(
+                [
+                    CollectionIndex(fields=(("customer_id", SortDirection.ASC),)),
+                    CollectionIndex(fields=(("tag_id", SortDirection.ASC),)),
+                    CollectionIndex(
+                        fields=(
+                            ("customer_id", SortDirection.ASC),
+                            ("tag_id", SortDirection.ASC),
+                        )
+                    ),
+                ]
             )
 
         return self
@@ -265,7 +281,7 @@ class CustomerDocumentStore(CustomerStore):
                 if existing:
                     raise ValueError(f"Customer with id '{customer_id}' already exists")
             else:
-                customer_checksum = md5_checksum(f"{name}{extra}{tags}")
+                customer_checksum = xxh3_checksum(f"{name}{extra}{tags}")
                 customer_id = CustomerId(self._id_generator.generate(customer_checksum))
 
             customer = Customer(
@@ -281,7 +297,7 @@ class CustomerDocumentStore(CustomerStore):
             )
 
             for tag_id in tags or []:
-                tag_checksum = md5_checksum(f"{customer.id}{tag_id}")
+                tag_checksum = xxh3_checksum(f"{customer.id}{tag_id}")
 
                 await self._tag_association_collection.insert_one(
                     document={
@@ -445,7 +461,7 @@ class CustomerDocumentStore(CustomerStore):
 
             creation_utc = creation_utc or datetime.now(timezone.utc)
 
-            association_checksum = md5_checksum(f"{customer_id}{tag_id}")
+            association_checksum = xxh3_checksum(f"{customer_id}{tag_id}")
 
             association_document: _CustomerTagAssociationDocument = {
                 "id": ObjectId(self._id_generator.generate(association_checksum)),
@@ -493,7 +509,7 @@ class CustomerDocumentStore(CustomerStore):
         return None
 
     @override
-    async def add_extra(
+    async def upsert_extra(
         self,
         customer_id: CustomerId,
         extra: Mapping[str, str],

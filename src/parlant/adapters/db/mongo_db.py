@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, Sequence
 from bson import CodecOptions
 from typing_extensions import Self
 from parlant.core.loggers import Logger
 from parlant.core.persistence.common import Cursor, SortDirection, Where, ObjectId
 from parlant.core.persistence.document_database import (
+    CollectionIndex,
+    CollectionSort,
     BaseDocument,
     DeleteResult,
     DocumentCollection,
@@ -60,10 +62,17 @@ class MongoDocumentDatabase(DocumentDatabase):
             codec_options=CodecOptions(document_class=schema),
         )
 
-        # Create index on creation_utc field
-        await collection.create_index([("creation_utc", 1)])
-
         self._collections[name] = MongoDocumentCollection(self, collection)
+        await self._collections[name].ensure_indexes(
+            [
+                CollectionIndex(
+                    fields=(
+                        ("creation_utc", SortDirection.ASC),
+                        ("id", SortDirection.ASC),
+                    )
+                )
+            ]
+        )
         return self._collections[name]
 
     async def get_collection(
@@ -87,10 +96,14 @@ class MongoDocumentDatabase(DocumentDatabase):
             await self.delete_collection(failed_migrations_collection_name)
 
         failed_migration_collection: Optional[DocumentCollection[TDocument]] = None
-        for doc in await collection_existing_documents.to_list():
+        async for doc in collection_existing_documents:
             try:
+                original_version = doc.get("version")
                 if loaded_doc := await document_loader(doc):
-                    await result_collection.replace_one(doc, loaded_doc)
+                    # Only rewrite if the document was actually migrated (version changed or new dict created)
+                    if loaded_doc is not doc or loaded_doc.get("version") != original_version:
+                        # Use _id for efficient lookup instead of the full document
+                        await result_collection.replace_one({"_id": doc["_id"]}, loaded_doc)
                     continue
 
                 if failed_migration_collection is None:
@@ -118,10 +131,17 @@ class MongoDocumentDatabase(DocumentDatabase):
                 )
                 await failed_migration_collection.insert_one(doc)
 
-        # Create index on creation_utc field
-        await result_collection.create_index([("creation_utc", 1)])
-
         self._collections[name] = MongoDocumentCollection(self, result_collection)
+        await self._collections[name].ensure_indexes(
+            [
+                CollectionIndex(
+                    fields=(
+                        ("creation_utc", SortDirection.ASC),
+                        ("id", SortDirection.ASC),
+                    )
+                )
+            ]
+        )
         return self._collections[name]
 
     async def get_or_create_collection(
@@ -180,7 +200,7 @@ class MongoDocumentCollection(DocumentCollection[TDocument]):
                     {
                         "$and": [
                             {"creation_utc": cursor.creation_utc},
-                            {"_id": {"$lt": cursor.id}},
+                            {"id": {"$lt": cursor.id}},
                         ]
                     },
                 ]
@@ -190,15 +210,15 @@ class MongoDocumentCollection(DocumentCollection[TDocument]):
                     {
                         "$and": [
                             {"creation_utc": cursor.creation_utc},
-                            {"_id": {"$gt": cursor.id}},
+                            {"id": {"$gt": cursor.id}},
                         ]
                     },
                 ]
             query["$or"] = cursor_conditions
 
-        # Sort by creation_utc with _id as tiebreaker according to sort_direction
+        # Sort by creation_utc with id as tiebreaker according to sort_direction
         sort_order = -1 if sort_direction == SortDirection.DESC else 1
-        sort_spec = [("creation_utc", sort_order), ("_id", sort_order)]
+        sort_spec = [("creation_utc", sort_order), ("id", sort_order)]
 
         # Get one extra document to check if there are more
         query_limit = (limit + 1) if limit else None
@@ -223,16 +243,40 @@ class MongoDocumentCollection(DocumentCollection[TDocument]):
                 last_item = items[-1]
                 next_cursor = Cursor(
                     creation_utc=str(last_item.get("creation_utc", "")),
-                    id=ObjectId(str(last_item.get("_id", last_item.get("id", "")))),
+                    id=ObjectId(str(last_item.get("id", ""))),
                 )
 
         return FindResult(
             items=items, total_count=total_count, has_more=has_more, next_cursor=next_cursor
         )
 
-    async def find_one(self, filters: Where) -> TDocument | None:
-        result = await self._collection.find_one(filters)
+    def _translate_sort(
+        self,
+        sort: CollectionSort,
+    ) -> list[tuple[str, int]]:
+        return [
+            (field_name, -1 if direction == SortDirection.DESC else 1)
+            for field_name, direction in sort
+        ]
+
+    async def find_one(
+        self,
+        filters: Where,
+        sort: Optional[CollectionSort] = None,
+    ) -> TDocument | None:
+        mongo_sort = self._translate_sort(sort) if sort else None
+        result = await self._collection.find_one(filters, sort=mongo_sort)
         return result
+
+    async def ensure_indexes(
+        self,
+        indexes: Sequence[CollectionIndex],
+    ) -> None:
+        for index in indexes:
+            await self._collection.create_index(
+                self._translate_sort(index.fields),
+                unique=index.unique,
+            )
 
     async def insert_one(self, document: TDocument) -> InsertResult:
         insert_result = await self._collection.insert_one(document)

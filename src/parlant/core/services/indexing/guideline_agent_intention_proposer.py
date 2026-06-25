@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ import json
 import traceback
 from typing import Optional, Sequence
 from parlant.core.common import DefaultBaseModel
+from parlant.core.engines.alpha.guideline_matching.generic.common import escape_json_string
 from parlant.core.engines.alpha.optimization_policy import OptimizationPolicy
 from parlant.core.engines.alpha.prompt_builder import PromptBuilder
 from parlant.core.guidelines import GuidelineContent
@@ -108,7 +109,7 @@ class AgentIntentionProposer:
 GENERAL INSTRUCTIONS
 -----------------
 In our system, the behavior of a conversational AI agent is guided by "guidelines". You make use of these guidelines whenever it interacts with a user (also referred to as the customer).
-Each guideline is composed of two parts: 
+Each guideline is composed of two parts:
 - "condition": This is a natural-language condition that specifies when a guideline should apply. We test against this condition to determine whether this guideline should be applied when generating your next reply.
 - "action": This is a natural-language instruction that should be followed by you whenever the "condition" part of the guideline applies to the conversation in its particular state.
 Any instruction described here applies only to you, and not to the user.
@@ -121,21 +122,26 @@ Any instruction described here applies only to you, and not to the user.
             template="""
 TASK DESCRIPTION
 -----------------
-Your task is to determine whether a guideline condition reflects your intention. That is, whether it describes something you are doing or is about to do (e.g., "You discusses a patient's 
-medical record" or "You explain the conditions and terms"). Note: If the condition refers to something you have already done, it should not be considered an agent intention.
+Your task is to determine whether a guideline's condition MAY reflect your next intention. That is, whether it describes something which is not known at this point, but that you are likely to do next (e.g., "You are going to discuss a patient's medical record" or "You need to explain the terms and conditions"). Note: If the condition refers to something you have already done, or something that is already apparent given the context here, then it should not be considered a likely agent intention.
 
-If the condition reflects agent intention, rephrase it to describe what you are likely to do next, using the following format:
+Important: Consider what information is needed to determine whether the condition applies. If it can be determined from previous messages alone, it is not an agent intention. It is only considered an agent intention if it depends on the content of the agent's upcoming reply.
+
+If the condition reflects likely agent intention, rephrase it to more clearly describe that you are LIKELY to do it next, using the following format:
 "You are likely to (do something)."
 
 For example:
-Original: "You discusses a patient's medical record"
+Original: "You are going to discuss a patient's medical record"
 Rewritten: "You are likely to discuss a patient's medical record"
 
+On the other hand, if the condition does NOT reflect likely agent intention, simply indicate that it is not an agent intention. For example:
+Examples that aren't considered likely agent intentions:
+- "You're discussing the customer's order status"
+- "You have just confirmed that the order will be shipped to the customer"
+- "The customer is asking about the opening hours"
+- "You don't yet know the customer's order number"
+
 Why this matters:
-Although the original condition can be written in present tense, guideline matching happens before you reply. So we need the condition to reflect your probable upcoming behavior, based on the customer's latest message.
-
-
-
+We need to help conditions be clearer to evaluate. Although people who install guidelines often write the original condition in present tense, guideline matching happens before you reply - so we need the condition to reflect your probable upcoming behavior, based on the customer's latest message.
 
 """,
         )
@@ -155,7 +161,10 @@ GUIDELINE
 condition: {condition}
 action: {action}
 """,
-            props={"condition": guideline.condition, "action": guideline.action},
+            props={
+                "condition": escape_json_string(guideline.condition),
+                "action": escape_json_string(guideline.action) if guideline.action else None,
+            },
         )
 
         builder.add_section(
@@ -172,7 +181,7 @@ Expected output (JSON):
 }}
 ```
 """,
-            props={"condition": guideline.condition},
+            props={"condition": escape_json_string(guideline.condition)},
         )
 
         return builder
@@ -182,7 +191,7 @@ Expected output (JSON):
         guideline: GuidelineContent,
         temperature: float,
     ) -> AgentIntentionProposerSchema:
-        prompt = await self._build_prompt(guideline, _baseline_shots)
+        prompt = await self._build_prompt(guideline, await shot_collection.list())
 
         response = await self._schematic_generator.generate(
             prompt=prompt,
@@ -211,11 +220,11 @@ Expected Response:
 
 
 example_1_guideline = GuidelineContent(
-    condition="You discuss a patient's medical record",
+    condition="You're going to discuss a patient's medical record",
     action="Do not send any personal information",
 )
 example_1_shot = AgentIntentionProposerShot(
-    description="",
+    description="Condition tries to predict the agent's own intention in the next turn",
     guideline=example_1_guideline,
     expected_result=AgentIntentionProposerSchema(
         condition=example_1_guideline.condition,
@@ -229,7 +238,7 @@ example_2_guideline = GuidelineContent(
     action="Add a disclaimer clarifying that the response is not legal advice",
 )
 example_2_shot = AgentIntentionProposerShot(
-    description="",
+    description="Condition tries to predict the agent's own intention in the next turn",
     guideline=example_2_guideline,
     expected_result=AgentIntentionProposerSchema(
         condition=example_2_guideline.condition,
@@ -243,7 +252,7 @@ example_3_guideline = GuidelineContent(
     action="provide the package's tracking information",
 )
 example_3_shot = AgentIntentionProposerShot(
-    description="",
+    description="Condition describes something that has already happened, which can be inferred from the conversation history, rather than something that is likely to happen in the next turn",
     guideline=example_3_guideline,
     expected_result=AgentIntentionProposerSchema(
         condition=example_3_guideline.condition,
@@ -256,7 +265,7 @@ example_4_guideline = GuidelineContent(
     action="Add a disclaimer clarifying that the response is not legal advice",
 )
 example_4_shot = AgentIntentionProposerShot(
-    description="",
+    description="Condition tries to predict the agent's own intention in the next turn, and is already phrased in a way that reflects that, so it doesn't need to be rewritten",
     guideline=example_4_guideline,
     expected_result=AgentIntentionProposerSchema(
         condition=example_4_guideline.condition,
@@ -270,13 +279,27 @@ example_5_guideline = GuidelineContent(
     action="Provide our opening hours as described on out website",
 )
 example_5_shot = AgentIntentionProposerShot(
-    description="",
+    description="Condition describes something that the customer is doing, which can be inferred from the conversation history, rather than something that the agent itself is likely to do in the next turn",
     guideline=example_5_guideline,
     expected_result=AgentIntentionProposerSchema(
         condition=example_5_guideline.condition,
         is_agent_intention=False,
     ),
 )
+
+example_6_guideline = GuidelineContent(
+    condition="The customer has an inquiry that could be answered by inspecting their order",
+    action="Answer ONLY based on the information provided",
+)
+example_6_shot = AgentIntentionProposerShot(
+    description="Condition describes something that the customer is doing, which cannot be directly inferred from the conversation history, but is also not something that the agent itself is likely to do in the next turn. The condition should not be considered an agent intention.",
+    guideline=example_6_guideline,
+    expected_result=AgentIntentionProposerSchema(
+        condition=example_6_guideline.condition,
+        is_agent_intention=False,
+    ),
+)
+
 _baseline_shots: Sequence[AgentIntentionProposerShot] = [
     example_1_shot,
     example_2_shot,

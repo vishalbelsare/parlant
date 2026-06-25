@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -414,7 +414,6 @@ async def test_that_list_customers_pagination_with_invalid_cursor(
     response = await async_client.get("/customers?cursor=invalid_cursor")
     assert response.status_code == status.HTTP_200_OK
 
-    # Should return results as if no cursor was provided
+    # Should return results as if no cursor was provided, which in our case one customer (the guest)
     data = response.json()
-    assert "items" in data
-    assert data["total_count"] >= 1  # At least guest customer
+    assert len(data) == 1

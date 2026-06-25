@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -394,6 +394,68 @@ async def test_that_consumption_offsets_can_be_updated(
     assert session_dto["consumption_offsets"][consumer_id] == 1
 
 
+async def test_that_consumption_offsets_can_be_updated_to_zero(
+    async_client: httpx.AsyncClient,
+    long_session_id: SessionId,
+) -> None:
+    (
+        await async_client.patch(
+            f"/sessions/{long_session_id}",
+            json={
+                "consumption_offsets": {
+                    "client": 1,
+                }
+            },
+        )
+    ).raise_for_status()
+
+    session_dto = (
+        (
+            await async_client.patch(
+                f"/sessions/{long_session_id}",
+                json={
+                    "consumption_offsets": {
+                        "client": 0,
+                    }
+                },
+            )
+        )
+        .raise_for_status()
+        .json()
+    )
+
+    assert session_dto["consumption_offsets"]["client"] == 0
+
+
+async def test_that_omitting_consumption_offsets_does_not_reset_them(
+    async_client: httpx.AsyncClient,
+    long_session_id: SessionId,
+) -> None:
+    (
+        await async_client.patch(
+            f"/sessions/{long_session_id}",
+            json={
+                "consumption_offsets": {
+                    "client": 1,
+                }
+            },
+        )
+    ).raise_for_status()
+
+    session_dto = (
+        (
+            await async_client.patch(
+                f"/sessions/{long_session_id}",
+                json={"title": "updated title"},
+            )
+        )
+        .raise_for_status()
+        .json()
+    )
+
+    assert session_dto["consumption_offsets"]["client"] == 1
+
+
 async def test_that_title_can_be_updated(
     async_client: httpx.AsyncClient,
     session_id: SessionId,
@@ -410,6 +472,24 @@ async def test_that_title_can_be_updated(
     )
 
     assert session_dto["title"] == "new session title"
+
+
+async def test_that_title_can_be_updated_to_an_empty_string(
+    async_client: httpx.AsyncClient,
+    session_id: SessionId,
+) -> None:
+    session_dto = (
+        (
+            await async_client.patch(
+                f"/sessions/{session_id}",
+                json={"title": ""},
+            )
+        )
+        .raise_for_status()
+        .json()
+    )
+
+    assert session_dto["title"] == ""
 
 
 async def test_that_mode_can_be_updated(
@@ -676,6 +756,39 @@ async def test_that_events_can_be_filtered_by_offset(
 
     for event_params, listed_event in zip(session_events, retrieved_events):
         assert event_is_according_to_params(event=listed_event, params=event_params)
+
+
+async def test_that_events_can_be_streamed_via_sse(
+    async_client: httpx.AsyncClient,
+    container: Container,
+    session_id: SessionId,
+) -> None:
+    """Test that list_events endpoint streams events via SSE when sse=true."""
+    import json
+
+    session_events = [
+        make_event_params(EventSource.CUSTOMER),
+        make_event_params(EventSource.AI_AGENT),
+    ]
+    await populate_session_id(container, session_id, session_events)
+
+    collected_events: list[dict[str, Any]] = []
+    async with async_client.stream(
+        "GET",
+        f"/sessions/{session_id}/events",
+        params={"sse": "true", "wait_for_data": 1},
+    ) as response:
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+        async for line in response.aiter_lines():
+            if line.startswith("data: "):
+                event_data = json.loads(line[6:])
+                collected_events.append(event_data)
+
+    assert len(collected_events) == len(session_events)
+    for i, event in enumerate(collected_events):
+        assert event["offset"] == i
 
 
 @mark.skipif(not os.environ.get("LAKERA_API_KEY", False), reason="Lakera API key is missing")
@@ -955,6 +1068,44 @@ async def test_that_deleted_events_no_longer_show_up_in_the_listing(
     assert all(e["offset"] > event_to_delete["offset"] for e in remaining_events) is False
 
 
+async def test_that_new_events_keep_increasing_offsets_after_deleted_events(
+    container: Container,
+    session_id: SessionId,
+) -> None:
+    session_store = container[SessionStore]
+
+    first_event = await session_store.create_event(
+        session_id=session_id,
+        source=EventSource.CUSTOMER,
+        kind=EventKind.CUSTOM,
+        trace_id=generate_id(),
+        data={},
+    )
+    second_event = await session_store.create_event(
+        session_id=session_id,
+        source=EventSource.CUSTOMER,
+        kind=EventKind.CUSTOM,
+        trace_id=generate_id(),
+        data={},
+    )
+
+    await session_store.delete_event(event_id=second_event.id)
+
+    third_event = await session_store.create_event(
+        session_id=session_id,
+        source=EventSource.CUSTOMER,
+        kind=EventKind.CUSTOM,
+        trace_id=generate_id(),
+        data={},
+    )
+    visible_events = await session_store.list_events(session_id=session_id)
+
+    assert first_event.offset == 0
+    assert second_event.offset == 1
+    assert third_event.offset == 2
+    assert [event.offset for event in visible_events] == [0, 2]
+
+
 async def test_that_delete_events_raises_if_not_first_of_trace_id(
     async_client: httpx.AsyncClient,
     container: Container,
@@ -1036,7 +1187,7 @@ async def test_that_an_agent_message_can_be_regenerated(
         .json()
     )
 
-    await container[SessionListener].wait_for_events(
+    await container[SessionListener].wait_for_more_events(
         session_id=session_id,
         kinds=[EventKind.MESSAGE],
         trace_id=event["trace_id"],
@@ -1224,8 +1375,7 @@ async def test_that_agent_state_is_deleted_when_deleting_events(
     initial_events = (
         (await async_client.get(f"/sessions/{session_id}/events")).raise_for_status().json()
     )
-
-    event_to_delete = initial_events[2]
+    event_to_delete = next(e for e in initial_events if e["trace_id"] == second_event_trace_id)
 
     (
         await async_client.delete(
@@ -1236,6 +1386,95 @@ async def test_that_agent_state_is_deleted_when_deleting_events(
     session = await session_store.read_session(session_id)
 
     assert len(session.agent_states) == 1
+
+
+async def test_that_deleting_events_from_a_non_agent_trace_keeps_agent_state(
+    async_client: httpx.AsyncClient,
+    container: Container,
+    session_id: SessionId,
+) -> None:
+    session_store = container[SessionStore]
+
+    first_event_trace_id = generate_id()
+    human_event_trace_id = generate_id()
+    third_event_trace_id = generate_id()
+
+    session_events = [
+        make_event_params(
+            EventSource.CUSTOMER,
+            kind=EventKind.MESSAGE,
+            data={"message": "Hello"},
+            trace_id=first_event_trace_id,
+        ),
+        make_event_params(
+            EventSource.AI_AGENT,
+            kind=EventKind.MESSAGE,
+            data={"message": "Hi, how can I assist you?"},
+            trace_id=first_event_trace_id,
+        ),
+        make_event_params(
+            EventSource.HUMAN_AGENT,
+            kind=EventKind.MESSAGE,
+            data={"message": "I'll take it from here."},
+            trace_id=human_event_trace_id,
+        ),
+        make_event_params(
+            EventSource.CUSTOMER,
+            kind=EventKind.MESSAGE,
+            data={"message": "Thanks"},
+            trace_id=third_event_trace_id,
+        ),
+        make_event_params(
+            EventSource.AI_AGENT,
+            kind=EventKind.MESSAGE,
+            data={"message": "You're welcome!"},
+            trace_id=third_event_trace_id,
+        ),
+    ]
+
+    await populate_session_id(container, session_id, session_events)
+    await session_store.update_session(
+        session_id=session_id,
+        params={
+            "agent_states": [
+                AgentState(
+                    trace_id=first_event_trace_id,
+                    journey_paths={},
+                    applied_guideline_ids=[],
+                ),
+                AgentState(
+                    trace_id=third_event_trace_id,
+                    journey_paths={},
+                    applied_guideline_ids=[],
+                ),
+            ]
+        },
+    )
+
+    initial_events = (
+        (await async_client.get(f"/sessions/{session_id}/events")).raise_for_status().json()
+    )
+    human_trace_event = next(e for e in initial_events if e["trace_id"] == human_event_trace_id)
+
+    (
+        await async_client.delete(
+            f"/sessions/{session_id}/events?min_offset={human_trace_event['offset']}"
+        )
+    ).raise_for_status()
+
+    session = await session_store.read_session(session_id)
+    remaining_events = (
+        (await async_client.get(f"/sessions/{session_id}/events")).raise_for_status().json()
+    )
+
+    assert [state.trace_id for state in session.agent_states] == [
+        first_event_trace_id,
+        third_event_trace_id,
+    ]
+    assert [event["trace_id"] for event in remaining_events] == [
+        first_event_trace_id,
+        first_event_trace_id,
+    ]
 
 
 async def test_that_a_custom_event_can_be_read(
@@ -1828,3 +2067,186 @@ async def test_that_customer_message_fetches_participant_from_db_when_not_provid
     assert event["data"]["participant"]["id"] == session.customer_id
     # The display_name should be fetched from customer store (or fallback to customer_id)
     assert event["data"]["participant"]["display_name"] is not None
+
+
+###############################################################################
+## Labels Tests
+###############################################################################
+
+
+async def test_that_a_session_can_be_created_with_labels(
+    async_client: httpx.AsyncClient,
+    agent_id: AgentId,
+) -> None:
+    response = await async_client.post(
+        "/sessions",
+        json={
+            "customer_id": "test_customer",
+            "agent_id": agent_id,
+            "labels": ["premium", "vip"],
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+
+    session = response.json()
+    assert set(session["labels"]) == {"premium", "vip"}
+
+
+async def test_that_a_session_is_created_with_empty_labels_by_default(
+    async_client: httpx.AsyncClient,
+    agent_id: AgentId,
+) -> None:
+    response = await async_client.post(
+        "/sessions",
+        json={
+            "customer_id": "test_customer",
+            "agent_id": agent_id,
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+
+    session = response.json()
+    assert session["labels"] == []
+
+
+async def test_that_labels_can_be_added_to_a_session(
+    async_client: httpx.AsyncClient,
+    session_id: SessionId,
+) -> None:
+    response = await async_client.patch(
+        f"/sessions/{session_id}",
+        json={"labels": {"upsert": ["new_label", "another_label"]}},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    updated_session = response.json()
+
+    assert set(updated_session["labels"]) == {"new_label", "another_label"}
+
+
+async def test_that_labels_can_be_removed_from_a_session(
+    async_client: httpx.AsyncClient,
+    container: Container,
+    agent_id: AgentId,
+) -> None:
+    session_store = container[SessionStore]
+
+    session = await session_store.create_session(
+        customer_id=CustomerId("test_customer"),
+        agent_id=agent_id,
+        labels={"label1", "label2", "label3"},
+    )
+
+    response = await async_client.patch(
+        f"/sessions/{session.id}",
+        json={"labels": {"remove": ["label2"]}},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    updated_session = response.json()
+
+    assert set(updated_session["labels"]) == {"label1", "label3"}
+
+
+async def test_that_labels_can_be_upserted_and_removed_in_same_operation(
+    async_client: httpx.AsyncClient,
+    container: Container,
+    agent_id: AgentId,
+) -> None:
+    session_store = container[SessionStore]
+
+    session = await session_store.create_session(
+        customer_id=CustomerId("test_customer"),
+        agent_id=agent_id,
+        labels={"keep", "remove_me"},
+    )
+
+    response = await async_client.patch(
+        f"/sessions/{session.id}",
+        json={
+            "labels": {
+                "upsert": ["new_label"],
+                "remove": ["remove_me"],
+            }
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    updated_session = response.json()
+
+    assert set(updated_session["labels"]) == {"keep", "new_label"}
+
+
+async def test_that_sessions_can_be_listed_by_labels(
+    async_client: httpx.AsyncClient,
+    container: Container,
+    agent_id: AgentId,
+) -> None:
+    session_store = container[SessionStore]
+
+    session1 = await session_store.create_session(
+        customer_id=CustomerId("customer1"),
+        agent_id=agent_id,
+        labels={"premium", "support"},
+    )
+
+    session2 = await session_store.create_session(
+        customer_id=CustomerId("customer2"),
+        agent_id=agent_id,
+        labels={"premium", "sales"},
+    )
+
+    session3 = await session_store.create_session(
+        customer_id=CustomerId("customer3"),
+        agent_id=agent_id,
+        labels={"basic"},
+    )
+
+    # List sessions with "premium" label - should return session1 and session2
+    response = await async_client.get(
+        "/sessions",
+        params={"labels": ["premium"], "limit": 10},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    sessions = response.json()["items"]
+    session_ids = {s["id"] for s in sessions}
+
+    assert session1.id in session_ids
+    assert session2.id in session_ids
+    assert session3.id not in session_ids
+
+
+async def test_that_sessions_can_be_listed_by_multiple_labels(
+    async_client: httpx.AsyncClient,
+    container: Container,
+    agent_id: AgentId,
+) -> None:
+    session_store = container[SessionStore]
+
+    session1 = await session_store.create_session(
+        customer_id=CustomerId("customer1"),
+        agent_id=agent_id,
+        labels={"premium", "support"},
+    )
+
+    session2 = await session_store.create_session(
+        customer_id=CustomerId("customer2"),
+        agent_id=agent_id,
+        labels={"premium", "sales"},
+    )
+
+    # List sessions with both "premium" AND "support" labels - should only return session1
+    response = await async_client.get(
+        "/sessions",
+        params={"labels": ["premium", "support"], "limit": 10},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    sessions = response.json()["items"]
+    session_ids = {s["id"] for s in sessions}
+
+    assert session1.id in session_ids
+    assert session2.id not in session_ids

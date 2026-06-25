@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 import asyncio
+import contextvars
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 import enum
@@ -21,8 +22,9 @@ import inspect
 import json
 import os
 import traceback
+import uuid
 import dateutil.parser
-from types import TracebackType
+from types import TracebackType, UnionType
 from typing import (
     Annotated,
     Any,
@@ -71,6 +73,10 @@ from parlant.core.sessions import SessionId, SessionStatus
 from parlant.core.tools import ToolExecutionError, ToolService
 
 TOOL_RESULT_MAX_PAYLOAD_KB = int(os.environ.get("PARLANT_TOOL_RESULT_MAX_PAYLOAD_KB", 16))
+
+# Registry for passing EngineContext across HTTP boundary to PluginServer (same-process only)
+# Uses Any type to avoid circular import with EngineContext
+_engine_context_registry: dict[str, Any] = {}
 
 ToolFunction = Union[
     Callable[
@@ -186,17 +192,17 @@ def _resolve_param_info(param: inspect.Parameter) -> _ToolParameterInfo:
             if generic_type == "Optional":
                 is_optional = True
                 unpacked_type = args[0]
-            elif generic_type is None:
-                # Assuming we encountered union syntax; i.e., `str | None`
+            elif get_origin(parameter_type) is UnionType or generic_type is None:
+                # Handle union syntax; i.e., `str | None` (Python 3.10+ UnionType)
                 if len(args) != 2:
                     raise Exception()
                 if type(None) not in args:
                     raise Exception()
-                if all(t is None for t in args):
+                if all(t is type(None) for t in args):
                     raise Exception()
 
                 is_optional = True
-                unpacked_type = next(t for t in args if t is not None)
+                unpacked_type = next(t for t in args if t is not type(None))
 
             if not is_optional:
                 # At this point, at least as far as our supported options,
@@ -310,8 +316,8 @@ def _tool_decorator_impl(
             "A tool function must accept a parameter 'context: ToolContext'"
         )
 
-        assert parameters[0].name == "context", (
-            "A tool function's first parameter must be 'context: ToolContext'"
+        assert parameters[0].name in ["context", "ctx", "c"], (
+            "A tool function's first parameter must be named 'context', 'ctx', or 'c'"
         )
         assert parameters[0].annotation == ToolContext, (
             "A tool function's first parameter must be 'context: ToolContext'"
@@ -324,9 +330,22 @@ def _tool_decorator_impl(
         for param in parameters[1:]:
             param_info = _resolve_param_info(param)
 
-            if issubclass(param_info.resolved_type, enum.Enum):
-                assert all(type(e.value) is str for e in param_info.resolved_type), (
-                    f"{param.name}: {param_info.resolved_type.__name__}: Enum values must be strings"
+            resolved_type = param_info.resolved_type
+            enum_type_to_check: type[enum.Enum] | None = None
+
+            if inspect.isclass(resolved_type) and issubclass(resolved_type, enum.Enum):
+                enum_type_to_check = resolved_type
+            else:
+                # Check if it's a list[Enum] type
+                type_args = get_args(resolved_type)
+                if type_args and getattr(resolved_type, "__name__", None) == "list":
+                    item_type = type_args[0]
+                    if inspect.isclass(item_type) and issubclass(item_type, enum.Enum):
+                        enum_type_to_check = item_type
+
+            if enum_type_to_check is not None:
+                assert all(type(e.value) is str for e in enum_type_to_check), (
+                    f"{param.name}: {enum_type_to_check.__name__}: Enum values must be strings"
                 )
 
     def _describe_parameters(
@@ -354,7 +373,7 @@ def _tool_decorator_impl(
 
             if param_type in type_to_param_type:
                 param_descriptor["type"] = type_to_param_type[param_type]
-            elif issubclass(param_type, enum.Enum):
+            elif inspect.isclass(param_type) and issubclass(param_type, enum.Enum):
                 param_descriptor["type"] = "string"
                 param_descriptor["enum"] = [e.value for e in param_type]
             else:
@@ -373,11 +392,13 @@ def _tool_decorator_impl(
                     if list_item_type in type_to_param_type:
                         param_descriptor["type"] = "array"
                         param_descriptor["item_type"] = type_to_param_type[list_item_type]
-                    elif issubclass(list_item_type, enum.Enum):
+                    elif inspect.isclass(list_item_type) and issubclass(list_item_type, enum.Enum):
                         param_descriptor["type"] = "array"
                         param_descriptor["item_type"] = "string"
                         param_descriptor["enum"] = [e.value for e in list_item_type]
-                elif issubclass(param_info.resolved_type, BaseModel):
+                elif inspect.isclass(param_info.resolved_type) and issubclass(
+                    param_info.resolved_type, BaseModel
+                ):
                     param_descriptor["description"] = json.dumps(
                         {"json_schema": param_info.resolved_type.model_json_schema()}
                     )
@@ -462,6 +483,7 @@ class CallToolRequest(DefaultBaseModel):
     session_id: str
     customer_id: str
     arguments: dict[str, _ToolParameterType]
+    engine_context_id: str | None = None
 
 
 class _ToolResultShim(DefaultBaseModel):
@@ -496,6 +518,7 @@ class PluginServer:
         on_app_created: Callable[[FastAPI], Awaitable[FastAPI]] | None = None,
         plugin_data: Mapping[str, Any] = {},
         hosted: bool = False,
+        context_vars: Mapping[contextvars.ContextVar[Any], Any] = {},
     ) -> None:
         self.tools = {entry.tool.name: entry for entry in tools}
         self.plugin_data = plugin_data
@@ -503,6 +526,7 @@ class PluginServer:
         self.port = port
         self.hosted = hosted
         self.url = f"http://{self.host}:{self.port}"
+        self.context_vars = context_vars
 
         self._on_app_created = on_app_created
 
@@ -549,6 +573,7 @@ class PluginServer:
             host=self.host,
             port=self.port,
             log_level="critical",
+            ws="wsproto",
         )
 
         self._server = uvicorn.Server(config)
@@ -599,6 +624,10 @@ class PluginServer:
                     detail=f"Tool: '{name}' does not exists",
                 )
 
+            # Restore context vars for same-process hosted mode
+            for var, value in self.context_vars.items():
+                var.set(value)
+
             tool = await _recompute_and_marshal_tool(
                 spec.tool,
                 self.plugin_data,
@@ -619,6 +648,17 @@ class PluginServer:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Tool: '{name}' does not exists",
                 )
+
+            # Restore context vars for same-process hosted mode
+            for var, value in self.context_vars.items():
+                var.set(value)
+
+            # Restore EngineContext if context_id was provided (same-process hosted mode)
+            if request.engine_context_id and request.engine_context_id in _engine_context_registry:
+                # Late import to avoid circular dependency
+                from parlant.core.engines.alpha.entity_context import EntityContext
+
+                EntityContext.set(_engine_context_registry[request.engine_context_id])
 
             end = asyncio.Event()
             chunks_received = asyncio.Semaphore(value=0)
@@ -661,6 +701,7 @@ class PluginServer:
                                     control=result.control,
                                     canned_responses=result.canned_responses,
                                     canned_response_fields=result.canned_response_fields,
+                                    guidelines=result.guidelines,
                                 )
                             ).model_dump_json()
 
@@ -749,7 +790,7 @@ class PluginClient(ToolService):
     async def __aenter__(self) -> PluginClient:
         self._http_client = await httpx.AsyncClient(
             follow_redirects=True,
-            timeout=httpx.Timeout(120),
+            timeout=httpx.Timeout(int(os.environ.get("PARLANT_TOOL_TIMEOUT", 120))),
         ).__aenter__()
         return self
 
@@ -854,6 +895,17 @@ class PluginClient(ToolService):
         context: ToolContext,
         arguments: Mapping[str, JSONSerializable],
     ) -> ToolResult:
+        # Register the current EngineContext for same-process PluginServer access
+        # Late import to avoid circular dependency
+        from parlant.core.engines.alpha.entity_context import EntityContext
+
+        engine_context_id: str | None = None
+        engine_context = EntityContext.get()
+
+        if engine_context is not None:
+            engine_context_id = str(uuid.uuid4())
+            _engine_context_registry[engine_context_id] = engine_context
+
         try:
             tool = await self.read_tool(name)
             validate_tool_arguments(tool, arguments)
@@ -866,6 +918,7 @@ class PluginClient(ToolService):
                     "session_id": context.session_id,
                     "customer_id": context.customer_id,
                     "arguments": arguments,
+                    "engine_context_id": engine_context_id,
                 },
             ) as response:
                 if response.status_code == status.HTTP_404_NOT_FOUND:
@@ -945,6 +998,10 @@ class PluginClient(ToolService):
             raise exc
         except Exception as exc:
             raise ToolExecutionError(tool_name=name) from exc
+        finally:
+            # Clean up context registry entry
+            if engine_context_id is not None and engine_context_id in _engine_context_registry:
+                del _engine_context_registry[engine_context_id]
 
         raise ToolExecutionError(
             tool_name=name,

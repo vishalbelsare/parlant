@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -421,6 +421,28 @@ async def test_that_actions_which_are_not_agent_intention_are_classified_correct
         GuidelineContent(
             condition="Customer indicated your behavior is likely to cause them harm",
             action="Apologize and ask about what worries the customer",
+        ),
+        GuidelineContent(
+            condition="The customer gives very short snappy responses like 'ok', 'sure', 'got it'",
+            action="Keep the next point brief, one sentence maximum",
+        ),
+        GuidelineContent(
+            condition="The customer has an inquiry that sounds high-level or basic, not drilling into specifics or details",
+            action="Answer ONLY based on the information provided",
+        ),
+    ]
+
+    for g in guidelines:
+        await check_guideline(context=context, guideline=g, is_agent_intention=False)
+
+
+async def test_that_actions_using_the_word_likely_arent_falsely_detected_as_agent_intention(
+    context: ContextOfTest,
+) -> None:
+    guidelines = [
+        GuidelineContent(
+            condition="You are likely to encounter a very short and vague question from the customer, like 'credit cards' or 'dispute'",
+            action="refer the customer to our manual",
         ),
     ]
 

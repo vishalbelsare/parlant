@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,13 +55,13 @@ async def test_that_a_capability_can_be_created_with_tags(
     journey = await journey_store.create_journey(
         title="Customer Support Journey",
         description="A journey for customer support interactions.",
-        conditions=[],
+        triggers=[],
     )
 
     tag1 = await tag_store.create_tag("tag1")
     tag2 = await tag_store.create_tag("tag2")
-    agent_tag = Tag.for_agent_id(agent.id)
-    journey_tag = Tag.for_journey_id(journey.id)
+    agent_tag = Tag.for_agent_id(agent.id).id
+    journey_tag = Tag.for_journey_id(journey.id).id
 
     payload = {
         "title": "Summarization",
@@ -275,7 +275,7 @@ async def test_that_agent_tag_can_be_added_to_a_capability(
         .raise_for_status()
         .json()
     )
-    agent_tag = Tag.for_agent_id(agent.id)
+    agent_tag = Tag.for_agent_id(agent.id).id
 
     update_payload = {"tags": {"add": [agent_tag]}}
     response = await async_client.patch(f"/capabilities/{capability['id']}", json=update_payload)
@@ -296,7 +296,7 @@ async def test_that_agent_tag_can_be_removed_from_a_capability(
 
     tag1 = await tag_store.create_tag("tag1")
 
-    agent_tag = Tag.for_agent_id(agent.id)
+    agent_tag = Tag.for_agent_id(agent.id).id
 
     capability = await capability_store.create_capability(
         title="Translation",
@@ -328,9 +328,9 @@ async def test_that_journey_tags_can_be_added_to_a_capability(
     journey = await journey_store.create_journey(
         title="Customer Support Journey",
         description="A journey for customer support interactions.",
-        conditions=[],
+        triggers=[],
     )
-    journey_tag = Tag.for_journey_id(journey.id)
+    journey_tag = Tag.for_journey_id(journey.id).id
 
     tag1 = await tag_store.create_tag("tag1")
 
@@ -372,9 +372,9 @@ async def test_that_journey_tags_can_be_removed_from_a_capability(
     journey = await journey_store.create_journey(
         title="Customer Support Journey",
         description="A journey for customer support interactions.",
-        conditions=[],
+        triggers=[],
     )
-    journey_tag = Tag.for_journey_id(journey.id)
+    journey_tag = Tag.for_journey_id(journey.id).id
 
     tag1 = await tag_store.create_tag("tag1")
 

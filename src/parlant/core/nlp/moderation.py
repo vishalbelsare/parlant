@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 from typing_extensions import override
 
+from parlant.core.health import HealthReporter
 from parlant.core.sessions import Session
 from parlant.core.loggers import Logger
 from parlant.core.meter import Meter
@@ -54,9 +55,15 @@ class ModerationService(ABC):
 
 
 class BaseModerationService(ModerationService):
-    def __init__(self, logger: Logger, meter: Meter) -> None:
+    def __init__(
+        self,
+        logger: Logger,
+        meter: Meter,
+        health_reporter: HealthReporter,
+    ) -> None:
         self.logger = logger
         self.meter = meter
+        self.health_reporter = health_reporter
 
         self._hist_moderation_request_duration = meter.create_duration_histogram(
             name="moderation",

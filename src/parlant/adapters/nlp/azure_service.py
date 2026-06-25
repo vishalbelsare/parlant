@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,15 +38,22 @@ from parlant.core.tracer import Tracer
 from parlant.core.meter import Meter
 from parlant.core.nlp.policies import policy, retry
 from parlant.core.nlp.tokenization import EstimatingTokenizer
-from parlant.core.nlp.service import EmbedderHints, NLPService, SchematicGeneratorHints
+from parlant.core.nlp.service import (
+    EmbedderHints,
+    NLPService,
+    SchematicGeneratorHints,
+    StreamingTextGeneratorHints,
+)
 from parlant.core.nlp.embedding import BaseEmbedder, Embedder, EmbeddingResult
 from parlant.core.nlp.generation import (
     T,
     BaseSchematicGenerator,
     SchematicGenerationResult,
+    StreamingTextGenerator,
 )
 from parlant.core.nlp.generation_info import GenerationInfo, UsageInfo
 from parlant.core.nlp.moderation import ModerationService, NoModeration
+from parlant.core.health import HealthReporter
 
 
 class AzureEstimatingTokenizer(EstimatingTokenizer):
@@ -66,20 +73,15 @@ class AzureSchematicGenerator(BaseSchematicGenerator[T]):
         "gpt-5": ["temperature"],
     }
 
-    def __init__(
-        self,
+    def __init__(self,
         model_name: str,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
         client: AsyncAzureOpenAI,
     ) -> None:
-        super().__init__(logger=logger, tracer=tracer, meter=meter, model_name=model_name)
+        super().__init__(logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter, model_name=model_name)
 
-        self.model_name = model_name
-        self._logger = logger
-        self._tracer = tracer
-        self._meter = meter
         self._client = client
         self._tokenizer = AzureEstimatingTokenizer(model_name=self.model_name)
 
@@ -123,7 +125,7 @@ class AzureSchematicGenerator(BaseSchematicGenerator[T]):
         prompt: str | PromptBuilder,
         hints: Mapping[str, Any] = {},
     ) -> SchematicGenerationResult[T]:
-        with self._logger.scope(f"Azure LLM Request ({self.schema.__name__})"):
+        with self.logger.scope(f"Azure LLM Request ({self.schema.__name__})"):
             return await self._do_generate(prompt, hints)
 
     async def _do_generate(
@@ -146,7 +148,7 @@ class AzureSchematicGenerator(BaseSchematicGenerator[T]):
                     **azure_api_arguments,
                 )
             except RateLimitError:
-                self._logger.error(
+                self.logger.error(
                     "Azure API rate limit exceeded. Possible reasons:\n"
                     "1. Your account may have insufficient API credits.\n"
                     "2. You may be using a free-tier account with limited request capacity.\n"
@@ -162,7 +164,7 @@ class AzureSchematicGenerator(BaseSchematicGenerator[T]):
             t_end = time.time()
 
             if response.usage:
-                self._logger.trace(response.usage.model_dump_json(indent=2))
+                self.logger.trace(response.usage.model_dump_json(indent=2))
 
             parsed_object = response.choices[0].message.parsed
             assert parsed_object
@@ -170,7 +172,7 @@ class AzureSchematicGenerator(BaseSchematicGenerator[T]):
             assert response.usage
 
             await record_llm_metrics(
-                self._meter,
+                self.meter,
                 self.model_name,
                 schema_name=self.schema.__name__,
                 input_tokens=response.usage.prompt_tokens,
@@ -212,7 +214,7 @@ class AzureSchematicGenerator(BaseSchematicGenerator[T]):
                     **azure_api_arguments,
                 )
             except RateLimitError:
-                self._logger.error(
+                self.logger.error(
                     "Azure API rate limit exceeded. Possible reasons:\n"
                     "1. Your account may have insufficient API credits.\n"
                     "2. You may be using a free-tier account with limited request capacity.\n"
@@ -228,16 +230,16 @@ class AzureSchematicGenerator(BaseSchematicGenerator[T]):
             t_end = time.time()
 
             if response.usage:
-                self._logger.trace(response.usage.model_dump_json(indent=2))
+                self.logger.trace(response.usage.model_dump_json(indent=2))
 
             raw_content = response.choices[0].message.content or "{}"
 
             try:
                 json_content = json.loads(normalize_json_output(raw_content))
             except json.JSONDecodeError:
-                self._logger.warning(f"Invalid JSON returned by {self.model_name}:\n{raw_content})")
+                self.logger.warning(f"Invalid JSON returned by {self.model_name}:\n{raw_content})")
                 json_content = jsonfinder.only_json(raw_content)[2]
-                self._logger.warning("Found JSON content within model response; continuing...")
+                self.logger.warning("Found JSON content within model response; continuing...")
 
             try:
                 content = self.schema.model_validate(json_content)
@@ -265,7 +267,7 @@ class AzureSchematicGenerator(BaseSchematicGenerator[T]):
                     ),
                 )
             except ValidationError:
-                self._logger.error(
+                self.logger.error(
                     f"JSON content returned by {self.model_name} does not match expected schema:\n{raw_content}"
                 )
                 raise
@@ -327,14 +329,14 @@ def create_azure_client() -> AsyncAzureOpenAI:
 
 
 class CustomAzureSchematicGenerator(AzureSchematicGenerator[T]):
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         _client = create_azure_client()
 
         super().__init__(
             model_name=os.environ["AZURE_GENERATIVE_MODEL_NAME"],
             logger=logger,
             tracer=tracer,
-            meter=meter,
+            meter=meter, health_reporter=health_reporter,
             client=_client,
         )
 
@@ -344,15 +346,14 @@ class CustomAzureSchematicGenerator(AzureSchematicGenerator[T]):
 
 
 class GPT_4o(AzureSchematicGenerator[T]):
-    def __init__(
-        self,
+    def __init__(self,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
         _client = create_azure_client()
         super().__init__(
-            model_name="gpt-4o", logger=logger, tracer=tracer, meter=meter, client=_client
+            model_name="gpt-4o", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter, client=_client
         )
 
     @property
@@ -361,15 +362,14 @@ class GPT_4o(AzureSchematicGenerator[T]):
 
 
 class GPT_4o_Mini(AzureSchematicGenerator[T]):
-    def __init__(
-        self,
+    def __init__(self,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
         _client = create_azure_client()
         super().__init__(
-            model_name="gpt-4o-mini", logger=logger, tracer=tracer, meter=meter, client=_client
+            model_name="gpt-4o-mini", logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter, client=_client
         )
         self._token_estimator = AzureEstimatingTokenizer(model_name=self.model_name)
 
@@ -381,19 +381,14 @@ class GPT_4o_Mini(AzureSchematicGenerator[T]):
 class AzureEmbedder(BaseEmbedder):
     supported_arguments = ["dimensions"]
 
-    def __init__(
-        self,
+    def __init__(self,
         model_name: str,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
         client: AsyncAzureOpenAI,
     ) -> None:
-        self.model_name = model_name
-
-        self._logger = logger
-        self._tracer = tracer
-        self._meter = meter
+        super().__init__(logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter, model_name=model_name)
 
         self._client = client
         self._tokenizer = AzureEstimatingTokenizer(model_name=self.model_name)
@@ -408,6 +403,7 @@ class AzureEmbedder(BaseEmbedder):
     def tokenizer(self) -> AzureEstimatingTokenizer:
         return self._tokenizer
 
+    @override
     async def do_embed(
         self,
         texts: list[str],
@@ -422,7 +418,7 @@ class AzureEmbedder(BaseEmbedder):
                 **filtered_hints,
             )
         except RateLimitError:
-            self._logger.error(
+            self.logger.error(
                 "Azure API rate limit exceeded. Possible reasons:\n"
                 "1. Your account may have insufficient API credits.\n"
                 "2. You may be using a free-tier account with limited request capacity.\n"
@@ -440,18 +436,17 @@ class AzureEmbedder(BaseEmbedder):
 
 
 class CustomAzureEmbedder(AzureEmbedder):
-    def __init__(
-        self,
+    def __init__(self,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
         _client = create_azure_client()
         super().__init__(
             model_name=os.environ["AZURE_EMBEDDING_MODEL_NAME"],
             logger=logger,
             tracer=tracer,
-            meter=meter,
+            meter=meter, health_reporter=health_reporter,
             client=_client,
         )
 
@@ -466,18 +461,17 @@ class CustomAzureEmbedder(AzureEmbedder):
 
 
 class AzureTextEmbedding3Large(AzureEmbedder):
-    def __init__(
-        self,
+    def __init__(self,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
         _client = create_azure_client()
         super().__init__(
             model_name="text-embedding-3-large",
             logger=logger,
             tracer=tracer,
-            meter=meter,
+            meter=meter, health_reporter=health_reporter,
             client=_client,
         )
 
@@ -492,18 +486,17 @@ class AzureTextEmbedding3Large(AzureEmbedder):
 
 
 class AzureTextEmbedding3Small(AzureEmbedder):
-    def __init__(
-        self,
+    def __init__(self,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
         _client = create_azure_client()
         super().__init__(
             model_name="text-embedding-3-small",
             logger=logger,
             tracer=tracer,
-            meter=meter,
+            meter=meter, health_reporter=health_reporter,
             client=_client,
         )
 
@@ -513,7 +506,7 @@ class AzureTextEmbedding3Small(AzureEmbedder):
 
     @property
     def dimensions(self) -> int:
-        return 3072
+        return 1536
 
 
 class AzureService(NLPService):
@@ -629,36 +622,51 @@ Please choose one of the following authentication methods:
       - AZURE_TENANT_ID
       - AZURE_FEDERATED_TOKEN_FILE
 
-Important: For Azure AD authentication, ensure your identity has the 
+Important: For Azure AD authentication, ensure your identity has the
 "Cognitive Services OpenAI User" role on the Azure OpenAI resource.
 
 For more details on Azure AD authentication options, see:
 https://docs.microsoft.com/en-us/python/api/overview/azure/identity-readme
 """
 
-    def __init__(
-        self,
+    def __init__(self,
         logger: Logger,
         tracer: Tracer,
-        meter: Meter,
+        meter: Meter, health_reporter: HealthReporter,
     ) -> None:
-        self._logger = logger
+        self.logger = logger
         self._tracer = tracer
         self._meter = meter
+
+        self._health_reporter = health_reporter
+
+    @property
+    @override
+    def supports_streaming(self) -> bool:
+        return False
+
+    @override
+    async def get_streaming_text_generator(
+        self, hints: StreamingTextGeneratorHints = {}
+    ) -> StreamingTextGenerator:
+        raise NotImplementedError("Streaming is not supported. Check supports_streaming first.")
 
     async def get_schematic_generator(
         self, t: type[T], hints: SchematicGeneratorHints = {}
     ) -> AzureSchematicGenerator[T]:
         if os.environ.get("AZURE_GENERATIVE_MODEL_NAME"):
             return CustomAzureSchematicGenerator[t](  # type: ignore
-                logger=self._logger, tracer=self._tracer, meter=self._meter
+                logger=self.logger,
+                tracer=self._tracer,
+                meter=self._meter,
+                health_reporter=self._health_reporter,
             )
-        return GPT_4o[t](self._logger, self._tracer, self._meter)  # type: ignore
+        return GPT_4o[t](self.logger, self._tracer, self._meter, self._health_reporter)  # type: ignore
 
     async def get_embedder(self, hints: EmbedderHints = {}) -> Embedder:
         if os.environ.get("AZURE_EMBEDDING_MODEL_NAME"):
-            return CustomAzureEmbedder(self._logger, self._tracer, self._meter)
-        return AzureTextEmbedding3Large(self._logger, self._tracer, self._meter)
+            return CustomAzureEmbedder(self.logger, self._tracer, self._meter, self._health_reporter)
+        return AzureTextEmbedding3Large(self.logger, self._tracer, self._meter, self._health_reporter)
 
     async def get_moderation_service(self) -> ModerationService:
         return NoModeration()
