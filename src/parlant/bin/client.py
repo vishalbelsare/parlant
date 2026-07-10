@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ from parlant.client.types import (
     Event,
     Journey,
     JourneyTagUpdateParams,
-    JourneyConditionUpdateParams,
+    JourneyTriggerUpdateParams,
     Guideline,
     Relationship,
     RelationshipKindDto,
@@ -946,6 +946,14 @@ class Actions:
             )
 
         elif kind == "openapi":
+            click.echo(
+                click.style(
+                    "Warning: OpenAPI tool services are deprecated and will be removed in a future version. "
+                    "Please migrate to SDK tool services.",
+                    fg="yellow",
+                ),
+                err=True,
+            )
             result = client.services.create_or_update(
                 name=name,
                 kind="openapi",
@@ -1219,7 +1227,7 @@ class Actions:
         ctx: click.Context,
         title: str,
         description: str,
-        conditions: list[str],
+        triggers: list[str],
         tags: list[str],
     ) -> Journey:
         client = cast(ParlantClient, ctx.obj.client)
@@ -1227,7 +1235,7 @@ class Actions:
         journey = client.journeys.create(
             title=title,
             description=description,
-            conditions=conditions,
+            triggers=triggers,
             tags=tags,
         )
 
@@ -1265,29 +1273,29 @@ class Actions:
         client.journeys.delete(journey_id=journey_id)
 
     @staticmethod
-    def add_journey_condition(
+    def add_journey_trigger(
         ctx: click.Context,
         journey_id: str,
         guideline_id: Optional[str],
-        condition: Optional[str],
+        trigger: Optional[str],
     ) -> Journey:
         client = cast(ParlantClient, ctx.obj.client)
 
         guideline_id = (
             guideline_id
             or client.guidelines.create(
-                condition=cast(str, condition),
+                condition=cast(str, trigger),
                 metadata={"journeys": [journey_id]},
             ).id
         )
 
         return client.journeys.update(
             journey_id=journey_id,
-            conditions=JourneyConditionUpdateParams(add=[guideline_id]),
+            triggers=JourneyTriggerUpdateParams(add=[guideline_id]),
         )
 
     @staticmethod
-    def remove_journey_condition(
+    def remove_journey_trigger(
         ctx: click.Context,
         journey_id: str,
         guideline_id: str,
@@ -1296,7 +1304,7 @@ class Actions:
 
         return client.journeys.update(
             journey_id=journey_id,
-            conditions=JourneyConditionUpdateParams(remove=[guideline_id]),
+            triggers=JourneyTriggerUpdateParams(remove=[guideline_id]),
         )
 
     @staticmethod
@@ -2961,7 +2969,7 @@ class Interface:
                 "ID": journey.id,
                 "Title": journey.title,
                 "Description": journey.description,
-                "Condition Guideline IDs": ", ".join(journey.conditions),
+                "Trigger Guideline IDs": ", ".join(journey.triggers),
                 "Tags": ", ".join(journey.tags or []),
             }
             for journey in journeys
@@ -2992,11 +3000,11 @@ class Interface:
         ctx: click.Context,
         title: str,
         description: str,
-        conditions: list[str],
+        triggers: list[str],
         tags: list[str],
     ) -> None:
         try:
-            journey = Actions.create_journey(ctx, title, description, conditions, tags)
+            journey = Actions.create_journey(ctx, title, description, triggers, tags)
             Interface._write_success(f"Created journey (id: {journey.id})")
             Interface._render_journeys([journey])
 
@@ -3020,29 +3028,29 @@ class Interface:
             set_exit_status(1)
 
     @staticmethod
-    def add_journey_condition(
+    def add_journey_trigger(
         ctx: click.Context,
         journey_id: str,
         guideline_id: Optional[str],
-        condition: Optional[str],
+        trigger: Optional[str],
     ) -> None:
         try:
-            journey = Actions.add_journey_condition(ctx, journey_id, guideline_id, condition)
-            Interface._write_success(f"Added condition to journey (id: {journey.id})")
+            journey = Actions.add_journey_trigger(ctx, journey_id, guideline_id, trigger)
+            Interface._write_success(f"Added trigger to journey (id: {journey.id})")
             Interface._render_journeys([journey])
         except Exception as e:
             Interface.write_error(f"Error: {type(e).__name__}: {e}")
             set_exit_status(1)
 
     @staticmethod
-    def remove_journey_condition(
+    def remove_journey_trigger(
         ctx: click.Context,
         journey_id: str,
         guideline_id: str,
     ) -> None:
         try:
-            journey = Actions.remove_journey_condition(ctx, journey_id, guideline_id)
-            Interface._write_success(f"Removed condition from journey (id: {journey.id})")
+            journey = Actions.remove_journey_trigger(ctx, journey_id, guideline_id)
+            Interface._write_success(f"Removed trigger from journey (id: {journey.id})")
             Interface._render_journeys([journey])
         except Exception as e:
             Interface.write_error(f"Error: {type(e).__name__}: {e}")
@@ -4475,10 +4483,10 @@ async def async_main() -> None:
         required=True,
     )
     @click.option(
-        "--condition",
+        "--trigger",
         type=str,
-        metavar="CONDITION",
-        help="Journey conditions",
+        metavar="TRIGGER",
+        help="Journey triggers",
         multiple=True,
         required=True,
     )
@@ -4488,14 +4496,14 @@ async def async_main() -> None:
         ctx: click.Context,
         title: str,
         description: str,
-        condition: tuple[str],
+        trigger: tuple[str],
         tag: tuple[str],
     ) -> None:
         Interface.create_journey(
             ctx=ctx,
             title=title,
             description=description,
-            conditions=list(condition),
+            triggers=list(trigger),
             tags=list(tag),
         )
 
@@ -4510,39 +4518,39 @@ async def async_main() -> None:
         Interface.update_journey(ctx, id, title, description)
 
     @journey.command(
-        "add-condition",
-        help="Add a condition to a journey, either by Guideline ID or by condition text",
+        "add-trigger",
+        help="Add a trigger to a journey, either by Guideline ID or by trigger text",
     )
     @click.option("--id", type=str, metavar="ID", help="Journey ID", required=True)
     @click.option(
         "--guideline-id", type=str, metavar="GUIDELINE_ID", help="Guideline ID", required=False
     )
-    @click.option("--condition", type=str, metavar="CONDITION", help="Condition", required=False)
+    @click.option("--trigger", type=str, metavar="TRIGGER", help="Trigger", required=False)
     @click.pass_context
-    def journey_add_condition(
+    def journey_add_trigger(
         ctx: click.Context,
         id: str,
-        condition: Optional[str],
+        trigger: Optional[str],
         guideline_id: Optional[str],
     ) -> None:
-        if not guideline_id and not condition:
-            Interface.write_error("Either --condition-id or --condition must be provided")
+        if not guideline_id and not trigger:
+            Interface.write_error("Either --guideline-id or --trigger must be provided")
             set_exit_status(1)
             raise FastExit()
 
-        if guideline_id and condition:
-            Interface.write_error("Only one of --condition-id or --condition can be provided")
+        if guideline_id and trigger:
+            Interface.write_error("Only one of --guideline-id or --trigger can be provided")
             set_exit_status(1)
             raise FastExit()
 
-        Interface.add_journey_condition(ctx, id, guideline_id, condition)
+        Interface.add_journey_trigger(ctx, id, guideline_id, trigger)
 
-    @journey.command("remove-condition", help="Remove a condition from a journey")
+    @journey.command("remove-trigger", help="Remove a trigger from a journey")
     @click.option("--id", type=str, metavar="ID", help="Journey ID", required=True)
-    @click.option("--condition", type=str, metavar="CONDITION", help="Condition", required=True)
+    @click.option("--trigger", type=str, metavar="TRIGGER", help="Trigger", required=True)
     @click.pass_context
-    def journey_remove_condition(ctx: click.Context, id: str, condition: str) -> None:
-        Interface.remove_journey_condition(ctx, id, condition)
+    def journey_remove_trigger(ctx: click.Context, id: str, trigger: str) -> None:
+        Interface.remove_journey_trigger(ctx, id, trigger)
 
     @journey.command("tag", help="Tag a journey")
     @click.option("--id", type=str, metavar="ID", help="Journey ID", required=True)

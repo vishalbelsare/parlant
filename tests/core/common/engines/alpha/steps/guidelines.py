@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 from pytest_bdd import given, parsers
 
 from parlant.core.agents import AgentId
-from parlant.core.common import JSONSerializable
+from parlant.core.common import Criticality, JSONSerializable
 from parlant.core.engines.alpha.guideline_matching.guideline_match import GuidelineMatch
 from parlant.core.entity_cq import EntityCommands
 from parlant.core.evaluations import GuidelinePayload, PayloadOperation
@@ -77,6 +77,36 @@ def given_a_guideline_to_when(
             condition=a_condition_holds,
             action=do_something,
             metadata=metadata,
+        )
+    )
+
+
+@step(
+    given,
+    parsers.parse(
+        "a guideline to {do_something} when {a_condition_holds} with criticality {criticality}"
+    ),
+)
+def given_a_guideline_to_when_with_criticality(
+    context: ContextOfTest,
+    do_something: str,
+    a_condition_holds: str,
+    criticality: str,
+) -> None:
+    guideline_store = context.container[GuidelineStore]
+
+    metadata = get_guideline_properties(context, a_condition_holds, do_something)
+    guideline_criticality = {
+        "high": Criticality.HIGH,
+        "medium": Criticality.MEDIUM,
+        "low": Criticality.LOW,
+    }[criticality]
+    context.sync_await(
+        guideline_store.create_guideline(
+            condition=a_condition_holds,
+            action=do_something,
+            metadata=metadata,
+            criticality=guideline_criticality,
         )
     )
 
@@ -163,7 +193,7 @@ def given_a_guideline_name_to_when(
     _ = context.sync_await(
         guideline_store.upsert_tag(
             context.guidelines[guideline_name].id,
-            Tag.for_agent_id(agent_id),
+            Tag.for_agent_id(agent_id).id,
         )
     )
 
@@ -213,7 +243,7 @@ def given_50_other_random_guidelines(
         _ = context.sync_await(
             guideline_store.upsert_tag(
                 guideline.id,
-                Tag.for_agent_id(agent_id),
+                Tag.for_agent_id(agent_id).id,
             )
         )
 
@@ -466,7 +496,7 @@ def given_the_guideline_called(
         _ = context.sync_await(
             guideline_store.upsert_tag(
                 guideline.id,
-                Tag.for_agent_id(agent_id),
+                Tag.for_agent_id(agent_id).id,
             )
         )
 
@@ -646,8 +676,8 @@ def given_an_dependency_between_guideline_and_a_journey(
                 kind=RelationshipEntityKind.GUIDELINE,
             ),
             target=RelationshipEntity(
-                id=Tag.for_journey_id(journey.id),
-                kind=RelationshipEntityKind.TAG,
+                id=Tag.for_journey_id(journey.id).id,
+                kind=RelationshipEntityKind.TAG_ALL,
             ),
             kind=RelationshipKind.DEPENDENCY,
         )

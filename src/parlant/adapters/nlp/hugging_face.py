@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ from typing import Any
 from typing_extensions import override
 import torch  # type: ignore
 from typing import cast
-from transformers import AutoModel, AutoTokenizer, PreTrainedTokenizer, PreTrainedModel  # type: ignore
+from transformers import AutoModel, AutoTokenizer, PreTrainedTokenizerBase, PreTrainedModel  # type: ignore
 from huggingface_hub.errors import (  # type: ignore
     InferenceTimeoutError,
     InferenceEndpointError,
@@ -35,9 +35,10 @@ from parlant.core.meter import Meter
 from parlant.core.nlp.policies import policy, retry
 from parlant.core.nlp.tokenization import EstimatingTokenizer
 from parlant.core.nlp.embedding import BaseEmbedder, EmbeddingResult
+from parlant.core.health import HealthReporter
 
 
-_TOKENIZER_MODELS: dict[str, PreTrainedTokenizer] = {}
+_TOKENIZER_MODELS: dict[str, PreTrainedTokenizerBase] = {}
 _AUTO_MODELS: dict[str, PreTrainedModel] = {}
 _DEVICE: torch.device | None = None
 
@@ -46,20 +47,21 @@ def _model_temp_dir() -> str:
     return str(Path(gettempdir()) / "parlant_data" / "hf_models")
 
 
-def _create_tokenizer(model_name: str) -> PreTrainedTokenizer:
+def _create_tokenizer(model_name: str) -> PreTrainedTokenizerBase:
     if model_name in _TOKENIZER_MODELS:
         return _TOKENIZER_MODELS[model_name]
 
     save_dir = os.environ.get("PARLANT_HOME", _model_temp_dir())
     os.makedirs(save_dir, exist_ok=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)  # type: ignore
-    tokenizer = cast(PreTrainedTokenizer, tokenizer)
+    tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(
+        model_name, trust_remote_code=True
+    )  # type: ignore
     tokenizer.save_pretrained(save_dir)
 
     _TOKENIZER_MODELS[model_name] = tokenizer
 
-    return tokenizer  # type: ignore
+    return tokenizer
 
 
 def _get_device() -> torch.device:
@@ -86,12 +88,14 @@ def _create_auto_model(model_name: str) -> PreTrainedModel:
     os.makedirs(save_dir, exist_ok=True)
 
     model = AutoModel.from_pretrained(
-        pretrained_model_name_or_path=model_name, attn_implementation="eager"
+        pretrained_model_name_or_path=model_name,
+        attn_implementation="eager",
+        trust_remote_code=True,
     ).to(_get_device())
     model = cast(PreTrainedModel, model)
 
     model.save_pretrained(save_dir)
-    model.eval()
+    model.eval()  # type: ignore
 
     _AUTO_MODELS[model_name] = model
 
@@ -111,8 +115,8 @@ class HuggingFaceEstimatingTokenizer(EstimatingTokenizer):
 
 
 class HuggingFaceEmbedder(BaseEmbedder):
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, model_name: str) -> None:
-        super().__init__(logger=logger, tracer=tracer, meter=meter, model_name=model_name)
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter, model_name: str) -> None:
+        super().__init__(logger=logger, tracer=tracer, meter=meter, health_reporter=health_reporter, model_name=model_name)
 
         self._model = _create_auto_model(model_name)
         self._tokenizer = HuggingFaceEstimatingTokenizer(model_name=model_name)
@@ -163,10 +167,10 @@ class HuggingFaceEmbedder(BaseEmbedder):
 
 
 class JinaAIEmbedder(HuggingFaceEmbedder):
-    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter) -> None:
+    def __init__(self, logger: Logger, tracer: Tracer, meter: Meter, health_reporter: HealthReporter) -> None:
         super().__init__(
             logger=logger,
-            meter=meter,
+            meter=meter, health_reporter=health_reporter,
             tracer=tracer,
             model_name="jinaai/jina-embeddings-v2-base-en",
         )

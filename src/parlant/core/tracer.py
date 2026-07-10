@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 import contextvars
 from typing import Iterator, Mapping, Union, Sequence
-from typing_extensions import deprecated, override
+from typing_extensions import override
 
 from parlant.core.common import generate_id
 
@@ -53,11 +53,6 @@ class Tracer(ABC):
     @property
     @abstractmethod
     def trace_id(self) -> str: ...
-
-    @property
-    @deprecated("Use trace_id instead")
-    def correlation_id(self) -> str:
-        return self.trace_id
 
     @property
     @abstractmethod
@@ -183,8 +178,3 @@ class LocalTracer(Tracer):
     @override
     def flush(self) -> None:
         pass
-
-
-@deprecated("Please use the Tracer class instead of ContextualCorrelator")
-class ContextualCorrelator(Tracer):
-    pass

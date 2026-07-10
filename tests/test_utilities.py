@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -50,6 +50,7 @@ from parlant.adapters.db.json_file import JSONFileDocumentDatabase
 from parlant.adapters.nlp.openai_service import GPT_4o
 from parlant.core.agents import Agent, AgentId, AgentStore
 from parlant.core.application import Application
+from parlant.core.application_context import ApplicationContext
 from parlant.core.async_utils import Timeout
 from parlant.core.common import DefaultBaseModel, JSONSerializable, Version
 from parlant.core.context_variables import (
@@ -60,6 +61,7 @@ from parlant.core.context_variables import (
 )
 from parlant.core.customers import Customer, CustomerId, CustomerStore
 from parlant.core.engines.alpha.hooks import EngineHook, EngineHooks
+from parlant.core.health import NullHealthReporter
 from parlant.core.engines.alpha.engine_context import EngineContext
 from parlant.core.engines.alpha.prompt_builder import PromptBuilder
 from parlant.core.glossary import GlossaryStore, Term
@@ -175,7 +177,12 @@ class _TestLogger(Logger):
 
 async def nlp_test(context: str, condition: str) -> bool:
     schematic_generator = GPT_4o[NLPTestSchema](
-        logger=_TestLogger(), tracer=LocalTracer(), meter=LocalMeter(_TestLogger())
+        logger=_TestLogger(),
+        tracer=LocalTracer(),
+        meter=LocalMeter(_TestLogger()),
+        health_reporter=NullHealthReporter(
+            ApplicationContext(instance_id="test-instance"),
+        ),
     )
 
     inference = await schematic_generator.generate(
@@ -260,7 +267,7 @@ async def create_term(
 
     await container[GlossaryStore].upsert_tag(
         term_id=term.id,
-        tag_id=Tag.for_agent_id(agent_id),
+        tag_id=Tag.for_agent_id(agent_id).id,
     )
 
     return term
@@ -307,7 +314,7 @@ async def create_guideline(
 
     _ = await container[GuidelineStore].upsert_tag(
         guideline.id,
-        Tag.for_agent_id(agent_id),
+        Tag.for_agent_id(agent_id).id,
     )
 
     if tool_function:
@@ -384,7 +391,7 @@ async def post_message(
     )
 
     if response_timeout:
-        await container[Application].sessions.wait_for_update(
+        await container[Application].sessions.wait_for_more_events(
             session_id=session_id,
             min_offset=event.offset + 1,
             kinds=[EventKind.MESSAGE],

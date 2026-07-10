@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ def given_the_term_definition(
     context.sync_await(
         glossary_store.upsert_tag(
             term_id=term.id,
-            tag_id=Tag.for_agent_id(agent_id),
+            tag_id=Tag.for_agent_id(agent_id).id,
         )
     )
 
@@ -304,7 +304,7 @@ def given_50_random_terms_related_to_technology_companies(
     for term in terms:
         context.sync_await(
             context.container[GlossaryStore].create_term(
-                tags=[Tag.for_agent_id(agent_id)],
+                tags=[Tag.for_agent_id(agent_id).id],
                 name=term["name"],  # type: ignore
                 description=term["description"],  # type: ignore
                 synonyms=term["synonyms"],

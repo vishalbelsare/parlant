@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ from openai.types.completion_usage import CompletionUsage
 from parlant.adapters.nlp.openrouter_service import (  # type: ignore[reportMissingImports]
     OpenRouterService,
     OpenRouterSchematicGenerator,
+    OpenRouterEmbedder,
     OpenRouterGPT4O,
     OpenRouterGPT4OMini,
     OpenRouterClaude35Sonnet,
@@ -33,6 +34,7 @@ from parlant.adapters.nlp.openrouter_service import (  # type: ignore[reportMiss
 )
 from parlant.core.loggers import Logger
 from parlant.core.common import DefaultBaseModel
+from parlant.core.health import HealthReporter
 from parlant.core.meter import Meter
 from parlant.core.tracer import Tracer
 
@@ -79,8 +81,10 @@ def test_that_openrouter_service_initializes_with_default_model() -> None:
     with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
         mock_logger = Mock()
         mock_meter = Mock()
+
+        mock_health_reporter = Mock()
         mock_tracer = Mock()
-        service = OpenRouterService(logger=mock_logger, tracer=mock_tracer, meter=mock_meter)
+        service = OpenRouterService(logger=mock_logger, tracer=mock_tracer, meter=mock_meter, health_reporter=mock_health_reporter)
         assert service.model_name == "openai/gpt-4o"
 
 
@@ -96,8 +100,10 @@ def test_that_openrouter_service_initializes_with_custom_model() -> None:
     ):
         mock_logger = Mock()
         mock_meter = Mock()
+
+        mock_health_reporter = Mock()
         mock_tracer = Mock()
-        service = OpenRouterService(logger=mock_logger, tracer=mock_tracer, meter=mock_meter)
+        service = OpenRouterService(logger=mock_logger, tracer=mock_tracer, meter=mock_meter, health_reporter=mock_health_reporter)
         assert service.model_name == "anthropic/claude-3.5-sonnet"
 
 
@@ -110,8 +116,10 @@ def test_that_openrouter_service_uses_environment_model() -> None:
     ):
         mock_logger = Mock()
         mock_meter = Mock()
+
+        mock_health_reporter = Mock()
         mock_tracer = Mock()
-        service = OpenRouterService(logger=mock_logger, tracer=mock_tracer, meter=mock_meter)
+        service = OpenRouterService(logger=mock_logger, tracer=mock_tracer, meter=mock_meter, health_reporter=mock_health_reporter)
         assert service.model_name == "meta-llama/llama-3.3-70b-instruct"
 
 
@@ -124,8 +132,10 @@ def test_that_openrouter_service_respects_custom_max_tokens() -> None:
     ):
         mock_logger = Mock()
         mock_meter = Mock()
+
+        mock_health_reporter = Mock()
         mock_tracer = Mock()
-        service = OpenRouterService(logger=mock_logger, tracer=mock_tracer, meter=mock_meter)
+        service = OpenRouterService(logger=mock_logger, tracer=mock_tracer, meter=mock_meter, health_reporter=mock_health_reporter)
         # max_tokens is used when creating generators, not stored in service
         assert service.model_name == "openai/gpt-4o"  # Default model
 
@@ -140,7 +150,7 @@ def test_that_openrouter_estimating_tokenizer_works(container: Container) -> Non
 def test_that_openrouter_gpt4o_generator_initializes_correctly(container: Container) -> None:
     """Test OpenRouterGPT4O initialization."""
     generator = OpenRouterGPT4O[SchemaData](
-        logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+        logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
     )
     assert generator.model_name == "openai/gpt-4o"
     assert generator.id == "openrouter/openai/gpt-4o"
@@ -150,7 +160,7 @@ def test_that_openrouter_gpt4o_generator_initializes_correctly(container: Contai
 def test_that_openrouter_gpt4o_mini_generator_initializes_correctly(container: Container) -> None:
     """Test OpenRouterGPT4OMini initialization."""
     generator = OpenRouterGPT4OMini[SchemaData](
-        logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+        logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
     )
     assert generator.model_name == "openai/gpt-4o-mini"
     assert generator.max_tokens == 128 * 1024
@@ -159,7 +169,7 @@ def test_that_openrouter_gpt4o_mini_generator_initializes_correctly(container: C
 def test_that_openrouter_claude_generator_initializes_correctly(container: Container) -> None:
     """Test OpenRouterClaude35Sonnet initialization."""
     generator = OpenRouterClaude35Sonnet[SchemaData](
-        logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+        logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
     )
     assert generator.model_name == "anthropic/claude-3.5-sonnet"
     assert generator.max_tokens == 8192
@@ -168,7 +178,7 @@ def test_that_openrouter_claude_generator_initializes_correctly(container: Conta
 def test_that_openrouter_llama_generator_initializes_correctly(container: Container) -> None:
     """Test OpenRouterLlama33_70B initialization."""
     generator = OpenRouterLlama33_70B[SchemaData](
-        logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+        logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
     )
     assert generator.model_name == "meta-llama/llama-3.3-70b-instruct"
     assert generator.max_tokens == 8192
@@ -188,12 +198,15 @@ def test_that_openrouter_generator_sets_custom_headers(mock_client_class: Mock) 
     ):
         mock_logger = Mock()
         mock_meter = Mock()
+
+        mock_health_reporter = Mock()
         mock_tracer = Mock()
         _ = OpenRouterSchematicGenerator[SchemaData](
             model_name="openai/gpt-4o",
             logger=mock_logger,
             tracer=mock_tracer,
             meter=mock_meter,
+            health_reporter=mock_health_reporter,
         )
 
         # Verify client was called with headers
@@ -211,11 +224,14 @@ def test_that_openrouter_generator_without_custom_headers(mock_client_class: Moc
         mock_logger = Mock()
         mock_tracer = Mock()
         mock_meter = Mock()
+
+        mock_health_reporter = Mock()
         _ = OpenRouterSchematicGenerator[SchemaData](
             model_name="openai/gpt-4o",
             logger=mock_logger,
             tracer=mock_tracer,
             meter=mock_meter,
+            health_reporter=mock_health_reporter,
         )
 
         # Verify client was called without custom headers
@@ -243,12 +259,15 @@ async def test_that_openrouter_generator_handles_json_mode_error(mock_client_cla
     mock_tracer = Mock()
     mock_meter = Mock()
 
+    mock_health_reporter = Mock()
+
     with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False):
         generator = OpenRouterSchematicGenerator[SchemaData](
             model_name="test-model",
             logger=mock_logger,
             tracer=mock_tracer,
             meter=mock_meter,
+            health_reporter=mock_health_reporter,
         )
 
     # Should fail since we're mocking the error
@@ -280,6 +299,7 @@ async def test_that_openrouter_generator_handles_successful_response(
             logger=container[Logger],
             tracer=container[Tracer],
             meter=container[Meter],
+            health_reporter=container[HealthReporter],
         )
 
         result = await generator.do_generate('Generate {"test_field": "test_value"}')
@@ -293,7 +313,7 @@ def test_that_openrouter_service_returns_correct_generator(container: Container)
     """Test OpenRouterService.get_schematic_generator with default model."""
     with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         generator = asyncio.run(service.get_schematic_generator(SchemaData))
         assert isinstance(generator, OpenRouterSchematicGenerator)
@@ -313,7 +333,7 @@ def test_that_openrouter_service_returns_correct_generator_for_claude(
         clear=True,
     ):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         generator = asyncio.run(service.get_schematic_generator(SchemaData))
         assert isinstance(generator, OpenRouterClaude35Sonnet)
@@ -330,7 +350,7 @@ def test_that_openrouter_service_creates_dynamic_generator_for_unknown_model(
         clear=True,
     ):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         generator = asyncio.run(service.get_schematic_generator(SchemaData))
         assert isinstance(generator, OpenRouterSchematicGenerator)
@@ -349,7 +369,7 @@ def test_that_openrouter_service_uses_custom_max_tokens(container: Container) ->
         clear=True,
     ):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         generator = asyncio.run(service.get_schematic_generator(SchemaData))
         assert generator.max_tokens == 2048
@@ -367,7 +387,7 @@ def test_that_openrouter_service_uses_environment_max_tokens(container: Containe
         clear=True,
     ):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         generator = asyncio.run(service.get_schematic_generator(SchemaData))
         assert generator.max_tokens == 4096
@@ -381,7 +401,7 @@ def test_that_openrouter_service_sets_default_max_tokens_for_gpt4(container: Con
         clear=True,
     ):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         generator = asyncio.run(service.get_schematic_generator(SchemaData))
         assert generator.max_tokens == 128 * 1024
@@ -395,7 +415,7 @@ def test_that_openrouter_service_sets_default_max_tokens_for_claude(container: C
         clear=True,
     ):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         generator = asyncio.run(service.get_schematic_generator(SchemaData))
         assert generator.max_tokens == 8192
@@ -409,10 +429,100 @@ def test_that_openrouter_service_sets_default_max_tokens_for_llama(container: Co
         clear=True,
     ):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         generator = asyncio.run(service.get_schematic_generator(SchemaData))
         assert generator.max_tokens == 8192
+
+
+@patch("parlant.core.nlp.policies.asyncio.sleep", new_callable=AsyncMock)
+@patch("parlant.adapters.nlp.openrouter_service.AsyncClient")
+async def test_that_openrouter_embedder_retries_empty_embedding_value_error(
+    mock_client_class: Mock,
+    mock_sleep: AsyncMock,
+    container: Container,
+) -> None:
+    mock_client = AsyncMock()
+    mock_client.embeddings.create = AsyncMock(
+        side_effect=[
+            ValueError("No embedding data received"),
+            Mock(data=[Mock(embedding=[0.1, 0.2, 0.3])]),
+        ]
+    )
+    mock_client_class.return_value = mock_client
+
+    embedder = OpenRouterEmbedder(
+        model_name="openai/text-embedding-3-small",
+        logger=container[Logger],
+        tracer=container[Tracer],
+        meter=container[Meter],
+        health_reporter=container[HealthReporter],
+    )
+
+    result = await embedder.do_embed(["hello"])
+
+    assert result.vectors == [[0.1, 0.2, 0.3]]
+    assert mock_client.embeddings.create.await_count == 2
+    mock_sleep.assert_awaited_once()
+
+
+@patch("parlant.core.nlp.policies.asyncio.sleep", new_callable=AsyncMock)
+@patch("parlant.adapters.nlp.openrouter_service.AsyncClient")
+async def test_that_openrouter_embedder_retries_empty_embedding_response_data(
+    mock_client_class: Mock,
+    mock_sleep: AsyncMock,
+    container: Container,
+) -> None:
+    mock_client = AsyncMock()
+    mock_client.embeddings.create = AsyncMock(
+        side_effect=[
+            Mock(data=[]),
+            Mock(data=[Mock(embedding=[0.4, 0.5])]),
+        ]
+    )
+    mock_client_class.return_value = mock_client
+
+    embedder = OpenRouterEmbedder(
+        model_name="openai/text-embedding-3-small",
+        logger=container[Logger],
+        tracer=container[Tracer],
+        meter=container[Meter],
+        health_reporter=container[HealthReporter],
+    )
+
+    result = await embedder.do_embed(["hello"])
+
+    assert result.vectors == [[0.4, 0.5]]
+    assert mock_client.embeddings.create.await_count == 2
+    mock_sleep.assert_awaited_once()
+
+
+@patch("parlant.core.nlp.policies.asyncio.sleep", new_callable=AsyncMock)
+@patch("parlant.adapters.nlp.openrouter_service.AsyncClient")
+async def test_that_openrouter_embedder_does_not_retry_unrelated_value_error(
+    mock_client_class: Mock,
+    mock_sleep: AsyncMock,
+    container: Container,
+) -> None:
+    mock_client = AsyncMock()
+    mock_client.embeddings.create = AsyncMock(
+        side_effect=ValueError("Embedding payload is malformed")
+    )
+    mock_client_class.return_value = mock_client
+
+    embedder = OpenRouterEmbedder(
+        model_name="openai/text-embedding-3-small",
+        logger=container[Logger],
+        tracer=container[Tracer],
+        meter=container[Meter],
+        health_reporter=container[HealthReporter],
+    )
+
+    with pytest.raises(ValueError, match="Embedding payload is malformed"):
+        await embedder.do_embed(["hello"])
+
+    assert mock_client.embeddings.create.await_count == 1
+    mock_sleep.assert_not_awaited()
 
 
 @pytest.mark.skip(
@@ -426,7 +536,7 @@ def test_that_openrouter_service_returns_openrouter_embedder(container: Containe
     """
     with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         embedder = asyncio.run(service.get_embedder())
         # OpenRouter embedder should be returned
@@ -444,7 +554,7 @@ def test_that_openrouter_service_returns_no_moderation(container: Container) -> 
     """Test OpenRouterService returns NoModeration."""
     with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
         service = OpenRouterService(
-            logger=container[Logger], tracer=container[Tracer], meter=container[Meter]
+            logger=container[Logger], tracer=container[Tracer], meter=container[Meter], health_reporter=container[HealthReporter]
         )
         moderation = asyncio.run(service.get_moderation_service())
         from parlant.core.nlp.moderation import NoModeration
@@ -459,6 +569,7 @@ def test_that_openrouter_generator_supports_correct_parameters(container: Contai
         logger=container[Logger],
         tracer=container[Tracer],
         meter=container[Meter],
+        health_reporter=container[HealthReporter],
     )
 
     expected_params = ["temperature", "max_tokens"]

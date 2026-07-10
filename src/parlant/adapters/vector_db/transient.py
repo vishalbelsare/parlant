@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License")
 # You may not use this file except in compliance with the License.
@@ -356,6 +356,10 @@ class TransientVectorCollection(Generic[TDocument], BaseVectorCollection[TDocume
             deleted_document=None,
         )
 
+    @staticmethod
+    def _distance_from_similarity(similarity: float) -> float:
+        return 1 - similarity
+
     async def do_find_similar_documents(
         self,
         filters: Where,
@@ -395,7 +399,7 @@ class TransientVectorCollection(Generic[TDocument], BaseVectorCollection[TDocume
         results = [
             SimilarDocumentResult(
                 document=cast(TDocument, d),
-                distance=1 - abs(sim),
+                distance=self._distance_from_similarity(sim),
             )
             for d, sim in docs_and_similarities
         ]

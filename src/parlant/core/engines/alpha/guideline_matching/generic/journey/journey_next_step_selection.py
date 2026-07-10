@@ -57,6 +57,7 @@ class _JourneyNode:
     customer_action_description: Optional[str] = None
     agent_dependent_action: Optional[bool] = None
     agent_action_description: Optional[str] = None
+    description: Optional[str] = None
     guideline: Guideline | None = None
 
 
@@ -70,7 +71,7 @@ class _JourneyEdge:
 class JourneyNextStepSelectionShot(Shot):
     interaction_events: Sequence[Event]
     journey_title: str
-    conditions: Sequence[str]
+    triggers: Sequence[str]
     current_node: _JourneyNode
     follow_up_conditions: dict[str, _JourneyEdge]
     expected_result: JourneyNextStepSelectionSchema
@@ -87,7 +88,7 @@ class JourneyNextStepSelection:
         context: GuidelineMatchingContext,
         node_guidelines: Sequence[Guideline] = [],
         journey_path: Sequence[str | None] = [],
-        journey_conditions: Sequence[Guideline] = [],
+        journey_triggers: Sequence[Guideline] = [],
     ) -> None:
         self._logger = logger
 
@@ -98,7 +99,7 @@ class JourneyNextStepSelection:
 
         self._context = context
         self._examined_journey = examined_journey
-        self._journey_conditions = journey_conditions
+        self._journey_triggers = journey_triggers
 
         self._guideline_id_to_guideline: dict[GuidelineId, Guideline] = {
             g.id: g for g in node_guidelines
@@ -115,6 +116,7 @@ class JourneyNextStepSelection:
             self._follow_up_conditions,
             self._condition_to_path,
             self._previous_path,
+            self._reset_journey,
         ) = self.build_node_wrappers(journey_path)
 
     def _get_guideline_node_index(self, guideline: Guideline) -> str:
@@ -128,7 +130,7 @@ class JourneyNextStepSelection:
         self,
         previous_path: Sequence[str | None],
     ) -> tuple[
-        _JourneyNode, dict[str, _JourneyEdge], dict[str, Sequence[str]], Sequence[str | None]
+        _JourneyNode, dict[str, _JourneyEdge], dict[str, Sequence[str]], Sequence[str | None], bool
     ]:
         def _get_reachable_follow_ups(
             guideline_id: GuidelineId,
@@ -180,10 +182,12 @@ class JourneyNextStepSelection:
                     dict[str, str | None],
                     guideline.metadata.get("customer_dependent_action_data", {}),
                 ).get("agent_action", None),
+                description=guideline.content.description,
                 guideline=guideline,
             )
             return node
 
+        reset_journey = False
         if not previous_path:
             root_g = self._guideline_id_to_guideline[self._node_index_to_guideline_id[ROOT_INDEX]]
             follow_ups = cast(
@@ -199,6 +203,7 @@ class JourneyNextStepSelection:
                 current_g_id = self._node_index_to_guideline_id[previous_path[-1]]
             else:
                 current_g_id = self._node_index_to_guideline_id[ROOT_INDEX]
+                reset_journey = True
                 previous_path = []
 
         current_node = _create_node(current_g_id)
@@ -229,7 +234,7 @@ class JourneyNextStepSelection:
             )
             condition_to_path[str(i)] = journey_node_path
 
-        return current_node, follow_up_conditions, condition_to_path, previous_path
+        return current_node, follow_up_conditions, condition_to_path, previous_path, reset_journey
 
     async def process(self) -> GuidelineMatchingBatchResult:
         prompt = self._build_prompt(shots=await self.shots())
@@ -250,11 +255,14 @@ class JourneyNextStepSelection:
                         "temperature": generation_attempt_temperatures[generation_attempt],
                     },
                 )
-                self._logger.trace(f"Completion:\n{inference.content.model_dump_json(indent=2)}")
+                self._logger.trace(
+                    f"Completion: {self._examined_journey.title}\n{inference.content.model_dump_json(indent=2)}"
+                )
 
                 if inference.content.applied_condition_id:
                     if inference.content.applied_condition_id == "None":
                         # Exit journey
+                        self._logger.debug(f"Journey '{self._examined_journey.title}': exited")
                         journey_path = list(self._previous_path) + [None]
                         return GuidelineMatchingBatchResult(
                             matches=[
@@ -274,6 +282,9 @@ class JourneyNextStepSelection:
                         )
                     elif inference.content.applied_condition_id == "0":
                         # Stay in the same node
+                        self._logger.debug(
+                            f"Journey '{self._examined_journey.title}': stayed at node {self._current_node.id}"
+                        )
                         matched_guideline = self._guideline_id_to_guideline[
                             self._node_index_to_guideline_id[self._current_node.id]
                         ]
@@ -306,6 +317,9 @@ class JourneyNextStepSelection:
                                 ].content.action
                                 is None
                             ):
+                                self._logger.debug(
+                                    f"Journey '{self._examined_journey.title}': completed"
+                                )
                                 journey_path = list(self._previous_path) + [None]
 
                                 return GuidelineMatchingBatchResult(
@@ -325,6 +339,9 @@ class JourneyNextStepSelection:
                                     generation_info=inference.info,
                                 )
                             else:
+                                self._logger.debug(
+                                    f"Journey '{self._examined_journey.title}': advanced to node {next_node}"
+                                )
                                 if not self._previous_path:
                                     # we started from the root and root was completed, so include it in journey path
                                     journey_path = cast(
@@ -350,13 +367,16 @@ class JourneyNextStepSelection:
                                     generation_info=inference.info,
                                 )
                         else:  # condition index invalid
+                            self._logger.warning(
+                                f"Journey '{self._examined_journey.title}': invalid condition id {condition_id}"
+                            )
                             return GuidelineMatchingBatchResult(
                                 matches=[],
                                 generation_info=inference.info,
                             )
             except Exception as exc:
                 self._logger.warning(
-                    f"Attempt {generation_attempt} failed: {traceback.format_exception(exc)}"
+                    f"Attempt {generation_attempt} failed: {self._examined_journey.title}\n{traceback.format_exception(exc)}"
                 )
 
                 last_generation_exception = exc
@@ -369,19 +389,26 @@ class JourneyNextStepSelection:
         follow_up_conditions: dict[str, _JourneyEdge],
         journey_title: str,
         journey_description: str = "",
-        journey_conditions: Sequence[Guideline] = [],
+        journey_triggers: Sequence[Guideline] = [],
     ) -> str:
         if journey_description:
             journey_description_str = f"\nJourney Description: {journey_description}"
         else:
             journey_description_str = ""
-        if journey_conditions:
-            journey_conditions_str = " OR ".join(
-                f'"{g.content.condition}"' for g in journey_conditions
+        if journey_triggers:
+            journey_triggers_str = " OR ".join(
+                f'"{g.content.condition}"' for g in journey_triggers
             )
-            journey_conditions_str = f"\nJourney activation condition: {journey_conditions_str}"
+            journey_triggers_str = f"\nJourney activation condition: {journey_triggers_str}"
         else:
-            journey_conditions_str = ""
+            journey_triggers_str = ""
+        journey_restart = ""
+        if self._reset_journey:
+            journey_restart = """
+Important:
+This journey has been restarted after a previous execution.
+Carefully determine what information from the previous execution can still be assumed valid and what needs to be asked again.
+When in doubt, prefer to re-verify previous decisions unless it's clear they haven't changed"""
 
         flags_str = "Step Flags:\n"
 
@@ -398,9 +425,12 @@ class JourneyNextStepSelection:
         elif current_node.kind == JourneyNodeKind.TOOL:
             flags_str += "- TOOL EXECUTION: This step is considered complete as long as the tool has been executed.\n"
 
+        node_description_line = (
+            f"Description: {current_node.description}\n" if current_node.description else ""
+        )
         current_node_description = f"""
 {current_node.action}
-{flags_str}
+{node_description_line}{flags_str}
 """
 
         follow_ups_nodes_description = ""
@@ -413,19 +443,19 @@ Condition ({id}): {e.condition}
         transition_description = f"""
 
 Journey: {journey_title}
-{journey_conditions_str}{journey_description_str}
+{journey_triggers_str}{journey_description_str}
 
-CURRENT STEP - 
+CURRENT STEP -
 {current_node_description}
 
-POSSIBLE TRANSITIONS - 
-If the journey is not applicable anymore, return None as next step. 
+POSSIBLE TRANSITIONS -
+If the journey is not applicable anymore, return None as next step.
 
 If the current step hasn't completed, return '0' as the condition id.
 
 In any other case, return next step from the following possible transitions:
 {follow_ups_nodes_description}
-
+{journey_restart}
 """
         return transition_description
 
@@ -439,7 +469,7 @@ OUTPUT FORMAT
 
 ```json
 {
-"journey_continues: <bool, whether the journey should continued. Reminder: If you are already executing journey steps (i.e., there is a "last_step"), the journey almost always continues. The activation condition is ONLY for starting new journeys, NOT for validating ongoing ones.>,
+"journey_continues": <bool, whether the journey should continued. Reminder: If you are already executing journey steps (i.e., there is a "last_step"), the journey almost always continues. The activation condition is ONLY for starting new journeys, NOT for validating ongoing ones.>,
 "current_step_completed_rationale": "<str, short explanation of whether current step completed>",
 "current_step_completed": <bool, whether the current step completed.>,
 "next_step_rationale": "<str, explanation for which condition best fits and why. Consider all the information provided in CURRENT and EARLIER messages>",
@@ -485,7 +515,7 @@ OUTPUT FORMAT
             current_node=shot.current_node,
             follow_up_conditions=shot.follow_up_conditions,
             journey_title=shot.journey_title,
-            journey_conditions=[
+            journey_triggers=[
                 Guideline(
                     id=GuidelineId(f"c-{i}"),
                     creation_utc=datetime.now(timezone.utc),
@@ -498,7 +528,7 @@ OUTPUT FORMAT
                     criticality=Criticality.HIGH,
                     tags=[],
                 )
-                for i, c in enumerate(shot.conditions)
+                for i, c in enumerate(shot.triggers)
             ],
         )
 
@@ -515,77 +545,83 @@ OUTPUT FORMAT
         self,
         shots: Sequence[JourneyNextStepSelectionShot],
     ) -> PromptBuilder:
-        builder = PromptBuilder(on_build=lambda prompt: self._logger.trace(f"Prompt:\n{prompt}"))
+        builder = PromptBuilder(
+            on_build=lambda prompt: self._logger.trace(
+                f"Prompt: {self._examined_journey.title}\n{prompt}"
+            )
+        )
+
+        builder.add_agent_identity(self._context.agent)
 
         builder.add_section(
             name="journey-step-selection-general-instructions",
             template="""
-    GENERAL INSTRUCTIONS
-    -------------------
-    You are an AI agent named {agent_name} whose role is to engage in multi-turn conversations with customers on behalf of a business.
-    Your interactions are structured around predefined "journeys" - systematic processes that guide customer conversations toward specific outcomes.
+GENERAL INSTRUCTIONS
+-------------------
+You are an AI agent named {agent_name} whose role is to engage in multi-turn conversations with customers on behalf of a business.
+Your interactions are structured around predefined "journeys" - systematic processes that guide customer conversations toward specific outcomes.
 
-    ## Journey Structure
-    Each journey consists of:
-    - **Steps**: Individual actions you must take (e.g., ask a question, provide information, perform a task)
-    - **Transitions**: Rules that determine which step comes next based on customer responses or completion status
-    - **Flags**: Special properties that modify how steps behave
+## Journey Structure
+Each journey consists of:
+- **Steps**: Individual actions you must take (e.g., ask a question, provide information, perform a task)
+- **Transitions**: Rules that determine which step comes next based on customer responses or completion status
+- **Flags**: Special properties that modify how steps behave
 
-    ## Your Core Task
-    Analyze the current conversation state and determine the next appropriate journey step, by evaluating which condition holds based on the last step that was performed and the current state of the conversation.
+## Your Core Task
+Analyze the current conversation state and determine the next appropriate journey step, by evaluating which condition holds based on the last step that was performed and the current state of the conversation.
     """,
             props={"agent_name": self._context.agent.name},
         )
         builder.add_section(
             name="journey-next-step-selection-task-description",
             template="""
-    TASK DESCRIPTION
-    -------------------
-    ## 1: Journey Context Check
-    Determine if the conversation should continue within the current journey.
-    Once a journey has begun, continue following it unless the customer explicitly indicates they no longer want to pursue the journey's original goal.
-    **Important**: The activation condition only starts a journey. It does NOT need to remain true for the journey to continue.
-    If the journey should end, set `applied_condition_id` to `"None"`.
+TASK DESCRIPTION
+-------------------
+## 1: Journey Context Check
+Determine if the conversation should continue within the current journey.
+Once a journey has begun, continue following it unless the customer explicitly indicates they no longer want to pursue the journey's original goal.
+**Important**: The activation condition only starts a journey. It does NOT need to remain true for the journey to continue.
+If the journey should end, set `applied_condition_id` to `"None"`.
 
-    ## 2: Current Step Completion
-    Evaluate whether the last executed step is complete:
-        - For CUSTOMER_DEPENDENT steps: step is completed if customer has provided the required information. It can be either after being asked or proactively in earlier messages.  
-        If the customer provided the information, set current_step_completed to 'true'.
-        If not, set completed to 'current_step_completed' as 'false' and applied_condition_id as '0'. 
+## 2: Current Step Completion
+Evaluate whether the last executed step is complete:
+    - For CUSTOMER_DEPENDENT steps: The step is completed if customer has provided the required information. It can be either after being asked or proactively in earlier messages.
+    If the customer provided the information, set current_step_completed to 'true'.
+    If not, set completed to 'current_step_completed' as 'false' and applied_condition_id as '0'.
 
-        - For REQUIRES AGENT ACTION steps: step is completed if the agent has performed the required communication or action. If so, set current_step_completed to 'true'. 
-        If not, set 'current_step_completed' as 'false' and applied_condition_id as '0'. 
+    - For REQUIRES AGENT ACTION steps: The step is completed if the agent has performed the required communication or action.
+    If so, set current_step_completed to 'true'.
+    If not, set 'current_step_completed' as 'false' and applied_condition_id as '0'.
 
-        - For TOOL EXECUTION steps: The tool was executed, and its result will appear as a staged event. Need to evaluate what condition applies for the next transition.
-            Note that the tool execution is the final action in the interaction, meaning all message exchanges occurred beforehand. Make sure to consider this order in your evaluation.
+    - For TOOL EXECUTION steps: The tool was executed, and its result will appear as a staged event. Evaluate which condition applies for the next transition based on the tool result..
+        Note that the tool execution is the final action in the interaction, meaning all message exchanges occurred beforehand. Make sure to consider this order in your evaluation.
 
-    ## 3: Journey Advancement
-    If the journey continues AND the current step is complete, choose the next step by evaluating which condition best fits.    
-    The condition contains one or more sub-conditions that must all be evaluated and met for the condition to be considered the best match.
+## 3: Journey Advancement
+If the journey continues AND the current step is complete, choose the next step by evaluating which condition best fits.
+The condition contains one or more sub-conditions that must all be evaluated and met for the condition to be considered the best match.
 
-    Select the condition ID that best matches:
-        - Consider all the condition parts in your evaluation.
-        - Only ONE transition condition should be the best fit
-        - Return its ID as `applied_condition_id`
+Select the condition ID that best matches:
+    - Consider all the condition parts in your evaluation.
+    - Only ONE transition condition should be the best fit
+    - Return its ID as `applied_condition_id`
 
-    **How to determine if condition / sub condition is fulfilled if the action is CUSTOMER DEPENDENT:**
-    The action is fulfilled if the customer has provided the required information. It can be either after being asked or proactively in earlier messages. 
-    That means, the agent does not need to ask for something for the action to be fulfilled.
-    Note that the customer may provide multiple details at once (in one message), and you should consider all of them to identify the most relevant condition.
-    Also, note that the customer may provide some of the answers in previous messages, consider those answers too. 
-    The answers may not arrive in the order we expect, and that’s fine. An answer for a later step may have been provided in earlier messages. As long as we have the required 
-    information, the condition is considered met.
+**How to determine if condition / sub condition is fulfilled if the action is CUSTOMER DEPENDENT:**
+The action is fulfilled if the customer has provided the required information. It can be either after being asked or proactively in earlier messages.
+That means, the agent does not need to ask for something for the action to be fulfilled.
+Note that the customer may provide multiple details at once (in one message), and you should consider all of them to identify the most relevant condition.
+Also, note that the customer may provide some of the answers in previous messages, consider those answers too.
+The answers may not arrive in the order we expect. An answer for a later step may have been provided in earlier messages. As long as we have the required
+information, the condition is considered met.
 
-   **Handling partial condition matches**
-    Conditions may contain multiple sub-conditions (e.g., "customer provided X AND agent did Y AND customer hasn't provided Z")
-    If ALL information has been provided (for example also Z) and no condition is fully satisfied, select the condition with the MOST satisfied parts
-    This represents the path closest to completion, even if technically the condition isn't met
-    - Example: If conditions check for missing data but the customer provided everything at once, choose the condition with the fewest remaining gaps
+**Handling partial condition matches**
+Conditions may contain multiple sub-conditions (e.g., "customer provided X AND agent did Y AND customer hasn't provided Z")
+If ALL information has been provided (for example also Z) and no condition is fully satisfied, select the condition with the MOST satisfied sub-conditions
+This represents the path closest to completion, even if technically the condition isn't met
 
-    Important - You tend to ignore customer actions completions that were provided in previous messages. It's important to notice ALL customer messages
-      history in details and evaluate which information was already provided. Please correct yourself in the future.
+Important - You tend to ignore customer action completions that were provided in previous messages. It's important to notice ALL customer messages
+    history in details and evaluate which information was already provided. Please correct yourself in the future.
 
-    You will be given a description of the current step that need to execute, and the conditions of the following transitions later in this prompt.
+You will be given a description of the current step that need to execute, and the conditions of the following transitions later in this prompt.
     """,
         )
         builder.add_section(
@@ -595,14 +631,16 @@ OUTPUT FORMAT
     -------------------
     {formatted_shots}
 
-    ###
-    Example section is over. The following is the real data you need to use for your decision.
+###
+Example section is over. The following is the real data you need to use for your decision.
     """,
             props={
                 "formatted_shots": self._format_shots(shots),
                 "shots": shots,
             },
         )
+
+        builder.add_customer_identity(self._context.customer, self._context.session)
         builder.add_context_variables(self._context.context_variables)
         builder.add_glossary(self._context.terms)
         builder.add_capabilities_for_guideline_matching(self._context.capabilities)
@@ -616,7 +654,7 @@ OUTPUT FORMAT
                 follow_up_conditions=self._follow_up_conditions,
                 journey_title=self._examined_journey.title,
                 journey_description=self._examined_journey.description,
-                journey_conditions=self._journey_conditions,
+                journey_triggers=self._journey_triggers,
             ),
         )
         builder.add_section(
@@ -677,7 +715,7 @@ example_1_current_node = _JourneyNode(
     kind=JourneyNodeKind.CHAT,
     action="Ask the customer for their desired pick up location",
     customer_dependent_action=True,
-    customer_action_description="The customer responded regarding their preference between exploring cities and scenic landscapes.",
+    customer_action_description="The customer provided their desired pick up location",
 )
 
 example_1_follow_up_nodes = {
@@ -737,7 +775,7 @@ example_2_current_node = _JourneyNode(
 
 example_2_follow_up_nodes = {
     "1": _JourneyEdge(
-        condition="The customer did not provided their desired pick up location.",
+        condition="The customer did not provide their desired pick up location.",
         target_node_action="Ask the customer for their desired pick up location",
     ),
     "2": _JourneyEdge(
@@ -860,8 +898,8 @@ example_3_expected = JourneyNextStepSelectionSchema(
     current_step_completed_rationale="The customer wants a loan for their restaurant, making it a business loan. So current step completed",
     current_step_completed=True,
     next_step_rationale="The customer has already specified in previous messages the amount of the loan and stocks as collateral which are digital. "
-    "The agent hasn't reviewed and confirmed the application so condition 4 is most appropriate",
-    applied_condition_id="4",
+    "The agent hasn't reviewed and confirmed the application so condition 6 is most appropriate",
+    applied_condition_id="6",
 )
 
 
@@ -888,7 +926,7 @@ example_4_current_node = _JourneyNode(
 
 example_4_follow_up_nodes = {
     "1": _JourneyEdge(
-        condition="The customer did not provided their desired pick up location.",
+        condition="The customer did not provide their desired pick up location.",
         target_node_action="Ask the customer for their desired pick up location",
     ),
     "2": _JourneyEdge(
@@ -909,7 +947,7 @@ example_4_expected = JourneyNextStepSelectionSchema(
     journey_continues=True,
     current_step_completed_rationale="The agent welcomed the customer, so current step completed.",
     current_step_completed=True,
-    next_step_rationale="The customer provided a pick up location in NYC, a destination and also a pick up time. Need to choose the condition that most of it's parts are true, so condition 4 best fits",
+    next_step_rationale="The customer provided pickup location (NYC), destination (Plaza Hotel), time (6 AM), and payment method (cash). All conditions have some unsatisfied parts but condition 4 has the most satisfied sub-conditions",
     applied_condition_id="4",
 )
 
@@ -985,7 +1023,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 1 - Stay on current step",
         interaction_events=example_1_events,
         journey_title="Book Taxi Journey",
-        conditions=["The customer wants to book a taxi"],
+        triggers=["The customer wants to book a taxi"],
         follow_up_conditions=example_1_follow_up_nodes,
         current_node=example_1_current_node,
         expected_result=example_1_expected,
@@ -994,7 +1032,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 2 - Information provided not on journey step order",
         interaction_events=example_2_events,
         journey_title="Book Taxi Journey",
-        conditions=["The customer wants to book a taxi"],
+        triggers=["The customer wants to book a taxi"],
         follow_up_conditions=example_2_follow_up_nodes,
         current_node=example_2_current_node,
         expected_result=example_2_expected,
@@ -1003,7 +1041,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 3 -  Information provided earlier in the conversation",
         interaction_events=example_3_events,
         journey_title="Loan Journey",
-        conditions=["The customer wants a loan"],
+        triggers=["The customer wants a loan"],
         follow_up_conditions=example_3_follow_up_nodes,
         current_node=example_3_current_node,
         expected_result=example_3_expected,
@@ -1012,7 +1050,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 4 - All required information is provided; select the best matching condition",
         interaction_events=example_4_events,
         journey_title="Book Taxi Journey",
-        conditions=["The customer wants to book a taxi"],
+        triggers=["The customer wants to book a taxi"],
         follow_up_conditions=example_4_follow_up_nodes,
         current_node=example_4_current_node,
         expected_result=example_4_expected,
@@ -1021,7 +1059,7 @@ _baseline_shots: Sequence[JourneyNextStepSelectionShot] = [
         description="Example 5 -  Information provided in current and earlier messages",
         interaction_events=example_5_events,
         journey_title="Loan Journey",
-        conditions=["The customer wants a loan"],
+        triggers=["The customer wants a loan"],
         follow_up_conditions=example_5_follow_up_nodes,
         current_node=example_5_current_node,
         expected_result=example_5_expected,

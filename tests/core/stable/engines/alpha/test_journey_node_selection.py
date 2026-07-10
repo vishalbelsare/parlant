@@ -84,7 +84,7 @@ class _NodeData:
 class _JourneyData:
     title: str
     nodes: list[_NodeData]
-    conditions: Sequence[str] = field(default_factory=list)
+    triggers: Sequence[str] = field(default_factory=list)
     description: str = ""
 
 
@@ -114,7 +114,7 @@ def context(
 
 JOURNEYS_DICT: dict[str, _JourneyData] = {
     "compliment_customer_journey": _JourneyData(
-        conditions=["the customer wishes to reset their password"],
+        triggers=["the customer wishes to reset their password"],
         title="Compliment Customer Journey",
         nodes=[
             _NodeData(
@@ -256,7 +256,7 @@ JOURNEYS_DICT: dict[str, _JourneyData] = {
         description="A journey that aids the customer in resetting their password, including verifying their identity.",
     ),
     "forgot_keys_journey": _JourneyData(
-        conditions=["the customer doesn't know where their keys are"],
+        triggers=["the customer doesn't know where their keys are"],
         title="Help Customer Find Their Keys",
         nodes=[
             _NodeData(
@@ -302,7 +302,7 @@ JOURNEYS_DICT: dict[str, _JourneyData] = {
         description="A journey that helps the customer locate their lost keys by asking clarifying questions and providing guidance.",
     ),
     "reset_password_journey": _JourneyData(
-        conditions=[
+        triggers=[
             "the customer wants to reset their password",
             "the customer can't remember their password",
         ],
@@ -437,7 +437,7 @@ JOURNEYS_DICT: dict[str, _JourneyData] = {
         description="A journey that assists the customer in resetting their password. The resetting process is only performed if the customer is polite and wishes the agent a good day. Otherwise - the agent should not reset the password.",
     ),
     "calzone_journey": _JourneyData(
-        conditions=["the customer wants to order a calzone"],
+        triggers=["the customer wants to order a calzone"],
         title="Deliver Calzone Journey",
         nodes=[
             _NodeData(
@@ -742,7 +742,7 @@ JOURNEYS_DICT: dict[str, _JourneyData] = {
         description="A journey for ordering calzones, guiding the customer through quantity, type, size, drinks, and delivery details, including stock checks and order confirmation.",
     ),
     "tech_experience_journey": _JourneyData(
-        conditions=["the customer needs technical help"],
+        triggers=["the customer needs technical help"],
         title="Technical Experience Journey",
         nodes=[
             _NodeData(
@@ -815,7 +815,7 @@ JOURNEYS_DICT: dict[str, _JourneyData] = {
         description="A journey to assess the customer's technical experience and guide them through troubleshooting steps tailored to their expertise and issue type. Specific instructions regarding troubleshooting steps will be provided at a later time and should not concern the node selection process.",
     ),
     "investment_advice_journey": _JourneyData(
-        conditions=[
+        triggers=[
             "the customer wants investment advice",
             "the customer is asking about investing",
         ],
@@ -895,6 +895,71 @@ JOURNEYS_DICT: dict[str, _JourneyData] = {
         ],
         description="A journey that provides investment advice based on the customer's age, financial situation, risk tolerance, and investment timeline.",
     ),
+    "book_flight": _JourneyData(
+        triggers=["the customer wants to book a flight"],
+        title="Book flight journey",
+        nodes=[
+            _NodeData(
+                id="1",
+                condition=None,
+                action="ask for the source and destination airport",
+                follow_up_ids=["2"],
+                customer_dependent_action=True,
+                customer_action="The customer provided both the source and destination airport",
+                kind=JourneyNodeKind.CHAT,
+            ),
+            _NodeData(
+                id="2",
+                condition="Always",
+                action="ask for the dates of the departure and return flight",
+                follow_up_ids=["3"],
+                customer_dependent_action=True,
+                customer_action="The customer provided the desired dates for both their arrival and for their return flight",
+                kind=JourneyNodeKind.CHAT,
+            ),
+            _NodeData(
+                id="3",
+                condition=None,
+                action="Ask for the name of the traveler or travelers",
+                follow_up_ids=["4"],
+                customer_dependent_action=True,
+                customer_action="The customer provided the name of the travelers",
+                kind=JourneyNodeKind.CHAT,
+            ),
+            _NodeData(
+                id="4",
+                condition="Always",
+                action="ask whether they want economy or business class",
+                follow_up_ids=["5", "6"],
+                customer_dependent_action=True,
+                customer_action="The customer specified if they want economy or business for each traveler",
+                kind=JourneyNodeKind.CHAT,
+            ),
+            _NodeData(
+                id="5",
+                condition="They want business ticket for at least one traveler",
+                action="Tell them that its gonna cost them extra money and they won't be able to cancel the ticket",
+                follow_up_ids=["6"],
+                kind=JourneyNodeKind.CHAT,
+                customer_dependent_action=False,
+            ),
+            _NodeData(
+                id="6",
+                condition="They don't want business class or they want business class and have been worn about business class terms",
+                action=None,
+                follow_up_ids=["7"],
+                kind=JourneyNodeKind.FORK,
+            ),
+            _NodeData(
+                id="7",
+                condition="The customer provided all the details",
+                action="book the flight using book_flight tool and the provided details",
+                follow_up_ids=[],
+                kind=JourneyNodeKind.TOOL,
+            ),
+        ],
+        description="A journey for booking flight tickets",
+    ),
 }
 
 
@@ -935,20 +1000,20 @@ async def create_journey(
     context: ContextOfTest,
     title: str,
     nodes: Sequence[_NodeData],
-    conditions: Sequence[str],
+    triggers: Sequence[str],
     description: str = "",
 ) -> tuple[Journey, Sequence[Guideline]]:
     journey_id = JourneyId("j1")
     guideline_store = context.container[GuidelineStore]
-    condition_ids: list[GuidelineId] = []
+    trigger_ids: list[GuidelineId] = []
 
-    for c in conditions:
+    for c in triggers:
         g = await guideline_store.create_guideline(condition=c, action=None)
         await guideline_store.upsert_tag(
             guideline_id=g.id,
-            tag_id=Tag.for_journey_id(journey_id=journey_id),
+            tag_id=Tag.for_journey_id(journey_id=journey_id).id,
         )
-        condition_ids.append(g.id)
+        trigger_ids.append(g.id)
 
     root_guideline = Guideline(
         id=GuidelineId("root"),
@@ -1009,7 +1074,7 @@ async def create_journey(
         root_id=JourneyNodeId(root_guideline.id),
         creation_utc=datetime.now(timezone.utc),
         description=description,
-        conditions=condition_ids,
+        triggers=trigger_ids,
         title=title,
         tags=[],
     )
@@ -1037,6 +1102,7 @@ async def base_test_that_correct_node_is_selected(
     customer: Customer,
     conversation_context: list[tuple[EventSource, str]],
     journey_name: str,
+    run_backtrack_journey_selector: bool | None,
     expected_next_node_index: str | Sequence[str] | None,
     expected_path: list[str] | None = None,
     journey_previous_path: Sequence[str | None] = [],
@@ -1058,7 +1124,7 @@ async def base_test_that_correct_node_is_selected(
         context=context,
         title=JOURNEYS_DICT[journey_name].title,
         nodes=JOURNEYS_DICT[journey_name].nodes,
-        conditions=JOURNEYS_DICT[journey_name].conditions,
+        triggers=JOURNEYS_DICT[journey_name].triggers,
         description=JOURNEYS_DICT[journey_name].description,
     )
 
@@ -1093,10 +1159,17 @@ async def base_test_that_correct_node_is_selected(
         assert expected_next_node_index is None or "None" in expected_next_node_index
     else:
         result_path: Sequence[str] = cast(list[str], result.matches[0].metadata["journey_path"])
+        if run_backtrack_journey_selector is not None:
+            if run_backtrack_journey_selector:
+                assert result.generation_info.schema_name == "JourneyBacktrackNodeSelectionSchema"
+            else:
+                assert result.generation_info.schema_name == "JourneyNextStepSelectionSchema"
         if expected_path:
             assert len(result_path) == len(expected_path)
             for result_node, expected_node in zip(result_path, expected_path):
-                assert result_node == expected_node
+                assert result_node == expected_node or (
+                    expected_node == "None" and result_node is None
+                )
         elif expected_next_node_index:  # Only test that the next node is correct
             if isinstance(expected_next_node_index, list):
                 assert result_path[-1] in expected_next_node_index or (
@@ -1135,6 +1208,7 @@ async def test_that_journey_selector_repeats_node_if_incomplete_1(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="compliment_customer_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1"],
         expected_next_node_index="1",
     )
@@ -1184,6 +1258,7 @@ async def test_that_journey_selector_repeats_node_if_incomplete_2(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="calzone_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1", "2", "7", "8"],
         expected_next_node_index="8",
     )
@@ -1220,6 +1295,7 @@ async def test_that_journey_selector_correctly_advances_to_follow_up_node_1(
         conversation_context=conversation_context,
         journey_previous_path=["1"],
         journey_name="compliment_customer_journey",
+        run_backtrack_journey_selector=False,
         expected_next_node_index="2",
     )
 
@@ -1251,6 +1327,7 @@ async def test_that_journey_selector_correctly_advances_to_follow_up_node_2(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1"],
         expected_next_node_index="2",
     )
@@ -1299,6 +1376,7 @@ async def test_that_journey_selector_correctly_exits_journey_1(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1", "2", "3"],
         expected_next_node_index=None,
     )
@@ -1347,6 +1425,7 @@ async def test_that_journey_selector_correctly_advances_to_follow_up_node_3(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1", "2", "3"],
         expected_next_node_index="5",
     )
@@ -1424,6 +1503,7 @@ async def test_that_journey_selector_correctly_advances_based_on_tool_result(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1", "2", "3", "5"],
         expected_next_node_index="6",
         staged_events=staged_events,
@@ -1466,6 +1546,7 @@ async def test_that_journey_selector_correctly_exits_journey_that_no_longer_appl
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1", "2"],
         expected_next_node_index=None,
     )
@@ -1503,6 +1584,7 @@ async def test_that_multinode_advancement_is_stopped_at_tool_requiring_nodes(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="calzone_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1"],
         expected_path=["1", "2", "7", "8", "9", "10"],
         expected_next_node_index="10",
@@ -1537,6 +1619,7 @@ async def test_that_multinode_advancement_completes_and_exits_journey(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="forgot_keys_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1"],
         expected_next_node_index=None,
     )
@@ -1589,6 +1672,7 @@ async def test_that_journey_selector_backtracks_when_customer_changes_earlier_ch
         customer=customer,
         conversation_context=conversation_context,
         journey_name="calzone_journey",
+        run_backtrack_journey_selector=True,
         journey_previous_path=["1", "2", "7"],
         expected_next_node_index="7",  # Should return to asking about calzone type. If it goes to step 8 it's not too bad
     )
@@ -1647,6 +1731,7 @@ async def test_that_journey_selector_backtracks_when_customer_changes_earlier_ch
         customer=customer,
         conversation_context=conversation_context,
         journey_name="calzone_journey",
+        run_backtrack_journey_selector=True,
         journey_previous_path=["1", "2", "7", "8", "9"],
         expected_next_node_index="3",  # Should go to node 3 (warn about delivery time for over 5 calzones)
     )
@@ -1743,6 +1828,7 @@ async def test_that_journey_selector_backtracks_and_fast_forwards_when_customer_
         customer=customer,
         conversation_context=conversation_context,
         journey_name="calzone_journey",
+        run_backtrack_journey_selector=True,
         journey_previous_path=["1", "2", "7", "8", "9", "10", "11"],
         expected_path=["1", "2", "7", "8", "9", "10", "11", "8", "9", "10"],
         expected_next_node_index="10",  # Should check stock again
@@ -1832,6 +1918,7 @@ async def test_that_journey_selector_backtracks_when_customer_changes_much_earli
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=True,
         journey_previous_path=["1", "2", "3", "5", "7"],
         expected_next_node_index=["1", "2", "3", "5", "7", "3", "5"],
         staged_events=staged_events,
@@ -1874,6 +1961,7 @@ async def test_that_multinode_advancement_is_stopped_at_node_that_requires_sayin
         customer=customer,
         conversation_context=conversation_context,
         journey_name="compliment_customer_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1", "2"],
         expected_path=["1", "2", "3", "4", "5"],
         expected_next_node_index="5",
@@ -1942,6 +2030,7 @@ async def test_that_journey_selector_backtracks_and_fast_forwards_when_customer_
         customer=customer,
         conversation_context=conversation_context,
         journey_name="calzone_journey",
+        run_backtrack_journey_selector=True,
         journey_previous_path=["1", "2", "7", "8", "9", "10", "11"],
         expected_path=[
             "1",
@@ -2005,6 +2094,7 @@ async def test_that_journey_selector_backtracks_and_fast_forwards_when_customer_
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=True,
         journey_previous_path=["1", "2", "3"],
         expected_next_node_index=["1", "2", "3", "5", "None"],
     )  # This test is slightly ambiguous, advancing to either node 3 or 5 (its followup) is considered valid
@@ -2090,6 +2180,7 @@ async def test_that_journey_selector_backtracks_and_fast_forwards_when_customer_
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=True,
         journey_previous_path=["1", "2", "3", "5", "7"],
         staged_events=staged_events,
         expected_path=[
@@ -2169,6 +2260,7 @@ async def test_that_journey_selector_does_not_fast_forward_when_earlier_customer
         customer=customer,
         conversation_context=conversation_context,
         journey_name="calzone_journey",
+        run_backtrack_journey_selector=True,
         journey_previous_path=["1", "2", "7", "8", "9", "10", "11"],
         expected_path=[
             "1",
@@ -2237,6 +2329,7 @@ async def test_that_journey_selector_backtracks_back_does_not_fast_forward_upon_
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=True,
         journey_previous_path=["1", "2", "3", "5"],
         expected_path=[
             "1",
@@ -2279,6 +2372,7 @@ async def test_that_journey_selector_correctly_advances_by_multiple_nodes(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="calzone_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1"],
         expected_path=["1", "2", "7", "8", "9"],
         expected_next_node_index="9",
@@ -2321,6 +2415,7 @@ async def test_that_fork_steps_are_correctly_traversed(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="tech_experience_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1", "2"],
         expected_path=["1", "2", "3", "6"],
         expected_next_node_index="6",
@@ -2347,6 +2442,7 @@ async def test_that_fork_steps_are_correctly_fast_forwarded_through(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="tech_experience_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=[],
         expected_path=["1", "2", "4", "8"],
         expected_next_node_index="8",
@@ -2388,6 +2484,7 @@ async def test_that_two_consecutive_fork_steps_are_traversed_correctly(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="investment_advice_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1", "2"],
         expected_path=["1", "2", "3", "4", "6"],
         expected_next_node_index="6",
@@ -2446,6 +2543,7 @@ async def test_that_two_consecutive_fork_steps_are_traversed_correctly_when_back
         customer=customer,
         conversation_context=conversation_context,
         journey_name="investment_advice_journey",
+        run_backtrack_journey_selector=None,  # Can be interpreted as exit journey (no backtrack) or backtracking
         journey_previous_path=["1", "1", "2", "3", "5", "8"],
         expected_next_node_index=["7", "None"],  # TODO change to None?
     )
@@ -2525,6 +2623,7 @@ async def test_that_journey_reexecutes_tool_running_step_even_if_the_tool_ran_be
         customer=customer,
         conversation_context=conversation_context,
         journey_name="calzone_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=["1", "2", "7", "8"],
         expected_path=["1", "2", "7", "8", "9", "10"],
         expected_next_node_index="10",  # Should check stock again
@@ -2575,7 +2674,140 @@ async def test_that_empty_previous_path_is_treated_as_if_journey_just_started(
         customer=customer,
         conversation_context=conversation_context,
         journey_name="reset_password_journey",
+        run_backtrack_journey_selector=False,
         journey_previous_path=[None, None, None],
         expected_path=["1"],
         expected_next_node_index="1",
+    )
+
+
+async def test_backtracking_to_the_same_journey_process_after_exiting_it(
+    context: ContextOfTest,
+    agent: Agent,
+    new_session: Session,
+    customer: Customer,
+) -> None:
+    conversation_context: list[tuple[EventSource, str]] = [
+        (
+            EventSource.CUSTOMER,
+            "Hi, I'd like to book a flight please.",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "I'd be happy to help you book a flight! Could you please tell me your source and destination airports?",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "I want to fly from JFK in New York to LAX in Los Angeles.",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "Great! And what dates would you like for your departure and return flights?",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "Hmm, actually... I'm not entirely sure about the dates yet. Let me think about this and get back to you later.",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "No problem at all! Take your time to figure out the dates. Is there anything else I can help you with in the meantime?",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "Actually yes, I'm planning another trip to Europe next month. Do you have any recommendations for good destinations in the spring?",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "Spring in Europe is wonderful! Some great destinations include Paris for the blooming gardens, Barcelona for pleasant weather and fewer crowds, Amsterdam for the tulip season, or the Greek islands as they start warming up. What kind of experience are you looking for - cultural, beach, or a mix?",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "I was thinking more cultural - museums, historical sites, that kind of thing.",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "In that case, I'd highly recommend Rome or Athens. Both have incredible ancient history, world-class museums, and the weather in spring is perfect for walking tours. Florence is also spectacular if you love Renaissance art and architecture.",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "Those sound great, thanks! Actually, you know what - I've decided on those dates for my LA trip. Can we book the flight now?",
+        ),
+    ]
+    await base_test_that_correct_node_is_selected(
+        context=context,
+        agent=agent,
+        session_id=new_session.id,
+        customer=customer,
+        conversation_context=conversation_context,
+        journey_name="book_flight",
+        run_backtrack_journey_selector=True,
+        journey_previous_path=["1", "2", None],
+        expected_path=["1", "2", "None", "2"],
+        expected_next_node_index="3",
+    )
+
+
+async def test_backtracking_to_the_same_journey_for_new_purpose_after_exiting_it(
+    context: ContextOfTest,
+    agent: Agent,
+    new_session: Session,
+    customer: Customer,
+) -> None:
+    conversation_context: list[tuple[EventSource, str]] = [
+        (
+            EventSource.CUSTOMER,
+            "Hi, I'd like to book a flight please.",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "I'd be happy to help you book a flight! Could you please tell me your source and destination airports?",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "I want to fly from JFK in New York to LAX in Los Angeles.",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "Great! And what dates would you like for your departure and return flights?",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "Hmm, actually... I'm not entirely sure about the dates yet. Let me think about this and get back to you later.",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "No problem at all! Take your time to figure out the dates. Is there anything else I can help you with in the meantime?",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "Actually yes, I'm planning another trip to Europe next month. Do you have any recommendations for good destinations in the spring?",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "Spring in Europe is wonderful! Some great destinations include Paris for the blooming gardens, Barcelona for pleasant weather and fewer crowds, Amsterdam for the tulip season, or the Greek islands as they start warming up. What kind of experience are you looking for - cultural, beach, or a mix?",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "I was thinking more cultural - museums, historical sites, that kind of thing.",
+        ),
+        (
+            EventSource.AI_AGENT,
+            "In that case, I'd highly recommend Rome or Athens. Both have incredible ancient history, world-class museums, and the weather in spring is perfect for walking tours. Florence is also spectacular if you love Renaissance art and architecture.",
+        ),
+        (
+            EventSource.CUSTOMER,
+            "Rome sounds perfect! Actually, can you help me book a flight to Rome instead? I'll figure out the LA trip another time.",
+        ),
+    ]
+    await base_test_that_correct_node_is_selected(
+        context=context,
+        agent=agent,
+        session_id=new_session.id,
+        customer=customer,
+        conversation_context=conversation_context,
+        journey_name="book_flight",
+        run_backtrack_journey_selector=False,
+        journey_previous_path=["1", "2", None],
+        expected_path=["1", "2"],
+        expected_next_node_index="2",
     )

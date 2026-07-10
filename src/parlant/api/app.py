@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import asyncio
+from contextvars import ContextVar
 import os
 import traceback
-from typing import Awaitable, Callable, TypeAlias
+from typing import Any, Awaitable, Callable, Mapping, TypeAlias
 
 import mimetypes
 
@@ -30,6 +31,8 @@ from starlette.routing import Match
 from lagom import Container
 
 from parlant.adapters.loggers.websocket import WebSocketLogger
+from parlant.api.health import configure_healthz
+from parlant.core.health import HealthReporter
 from parlant.api import agents, capabilities
 from parlant.api import evaluations
 from parlant.api import journeys
@@ -104,7 +107,8 @@ def _resolve_operation_id(request: Request) -> str | None:
 
 async def create_api_app(
     container: Container,
-    configure: Callable[[FastAPI], Awaitable[None]] | None = None,
+    configure: Callable[[FastAPI], Awaitable[FastAPI | None]] | None = None,
+    contextvar_propagation: Mapping[ContextVar[Any], Any] = {},
 ) -> ASGIApplication:
     logger = container[Logger]
     websocket_logger = container[WebSocketLogger]
@@ -118,6 +122,9 @@ async def create_api_app(
         description="HTTP Request Duration",
     )
 
+    configure_healthz(container)
+    health_reporter = container[HealthReporter]
+
     api_app = FastAPI(
         title="Parlant API",
         description="API documentation for the Parlant server.",
@@ -125,6 +132,15 @@ async def create_api_app(
     )
 
     api_app = await authorization_policy.configure_app(api_app)
+
+    @api_app.middleware("http")
+    async def propagate_contextvars_into_request_task(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        for var, value in contextvar_propagation.items():
+            var.set(value)
+        return await call_next(request)
 
     @api_app.middleware("http")
     async def handle_cancellation(
@@ -234,8 +250,8 @@ async def create_api_app(
         return RedirectResponse("/chat")
 
     @api_app.get("/healthz")
-    async def health_check() -> dict[str, str]:
-        return {"status": "ok"}
+    async def health_check() -> dict[str, Any]:
+        return health_reporter.snapshot()
 
     agent_router = APIRouter(prefix="/agents")
 
@@ -355,7 +371,8 @@ async def create_api_app(
 
     # Call configure_api hook if provided
     if configure:
-        await configure(api_app)
+        if new_app := await configure(api_app):
+            api_app = new_app
 
     # Store FastAPI app in container for access via Server.api property
     container[FastAPI] = api_app

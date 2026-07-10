@@ -4,40 +4,228 @@ All notable changes to Parlant will be documented here.
 
 ## [Unreleased]
 
-- Allow specifying custom IDs when creating agents via SDK and API
-- Allow specifying custom IDs when creating customers via SDK and API
-- Allow bailing out of canned response selection and utilize the draft directly, using a hook
-- Add Snowflake Cortex service
+### Added
+
+- Add `HealthReporter` (`parlant.core.health_reporter`) — a generic, per-process health-reporting service registered in the container. Subsystems call `report(kind, attributes)`; registered `HealthView` objects interpret reports per kind and contribute to the `/healthz` snapshot. Each kind has a configurable retention policy (`window` + `max_count`). Views declare `Criticality.CRITICAL` or `INFORMATIONAL`; only critical views feed the worst-of overall status rollup
+- Add `NLPHealthView` reporting NLP request health sliced by schema (success rate, p50/p95 latency, recent error breakdown) with configurable thresholds for `degraded`/`unhealthy` classification
+- Instrument `BaseSchematicGenerator.generate()` and `BaseEmbedder.embed()` to emit `nlp.request` / `nlp.embed` health reports on success and failure, providing dashboard visibility into LLM and embedding behavior across all adapters
+- Wrap the existing event-loop check as `EventLoopHealthView` so `/healthz` rollup is uniform across all health views
+- Add per-decision debug logs to journey node selection (`Journey '<title>': advanced/stayed/exited/completed/backtracked/auto-advanced/...`) so journey progression is visible at debug level alongside guideline matching
+- Add a warning log for invalid condition ids returned during journey next-step selection
+
+### Changed
+
+- Rename journey `conditions` to `triggers` throughout the codebase, REST API, CLI, and SDKs to better reflect their role as activation signals. The REST API field, query parameter, and request bodies use `triggers` (no aliases). The Python SDK `Server.create_journey(...)` keeps `conditions=` as a deprecated keyword that emits a `DeprecationWarning`; passing both `triggers=` and `conditions=` raises an error. Existing journey records are migrated automatically by `parlant-prepare-migration` from the `journey_conditions` collection (with a `condition` field) to a new `journey_triggers` collection (with a `trigger` field). LLM prompt strings that include "Journey activation condition" are intentionally preserved
+- Rename SDK callback `on_match` to `on_selected` on guidelines and journey state transitions to reflect that it fires post-resolution, when the entity is selected for message generation; `EngineHooks.on_guideline_match_handlers` and `on_journey_match_handlers` are renamed to `on_guideline_selected_handlers` and `on_journey_selected_handlers` accordingly
+- Standardize guideline matcher log vocabulary: `"Activated"` → `"Matched"`, `"Skipped"` → `"Not matched"`, and `"Not applied"` → `"Unapplied"`
+- Standardize relational resolver log vocabulary: `"Skipped: ... deactivated due to ..."` → `"Dropped (<reason>): ..."` with reasons `lower priority`, `unmet dependency`, `dependency on dropped entity`, `deprioritized by guideline`, and `deprioritized by journey`
+- Disambiguation batch now uses the standard matcher vocabulary (`"Matched (disambiguation)"` / `"Not matched (disambiguation)"`) and emits a log on the negative branch (previously silent)
+- Normalize observational batch rationale to plain `match.rationale` (no longer wrapped with `Condition Application Rationale: "..."`) for consistency with other batches
+- Normalize low-criticality batch warning string to `"No checks generated"` to match other batches
+
+### Removed
+
+- Remove redundant `glm_service.py` NLP adapter and `NLPServices.glm()` factory method — the GLM/bigmodel.cn API is already covered by the existing Zhipu adapter (`zhipu_service.py`), which uses the official `zhipuai` SDK and supports GLM-4 model variants. Use `NLPServices.zhipu()` instead.
+
+### Fixed
+
+- Fix low-criticality matcher logging the entire inference blob once per guideline in a batch (N copies of the same payload at debug level); now logs a single per-item entry
+- Fix WebSocketLogger event loop starvation — when no WebSocket clients are subscribed, the drain loop processed queued messages without yielding, progressively blocking the async event loop and causing increasing latency over time
+- Fix journey reachable-follow-ups evaluation being order-dependent at fan-in nodes — `JourneyReachableNodesEvaluator` captured a child's path list by reference and then prepended to it in place, so a node with multiple parents had its stored routes mutated by whichever parent was visited first; the second parent then lost routes (or double-counted a hop) depending purely on graph/DFS order. The child's routes are now snapshotted per parent, making the result depend only on journey structure. This intentionally changes the computed follow-ups for existing fan-in journeys: a shared child's later parent now retains the routes it previously lost
+
+### Security
+
+- Upgrade dependencies to address known CVEs: authlib (>=1.6.11), requests (>=2.33.0), fastmcp (>=3.2.0), litellm (>=1.83.0), pytest (>=9.0.3), pyjwt (>=2.11.1), and constrain transitive deps — aiohttp, cryptography, pillow, pyopenssl, werkzeug, Mako, pyasn1, python-multipart, orjson, Pygments, diskcache
+- Upgrade chat frontend: vite (>=7.3.2) and override transitive deps — picomatch, lodash, flatted, brace-expansion, immutable, yaml
+
+## [3.3.1] - 2026-04-14
+
+### Added
+
+- Allow passing ToolId when attaching tools throughout the SDK
+- Add `AnyOf(tag)` and `AllOf(tag)` modifiers for explicit control over tag dependency semantics in `depend_on()` — `AnyOf` requires at least one tagged member to be active, `AllOf` requires all of them (bare `Tag` defaults to `AllOf`)
+- Add `depend_on_any()` to `Guideline`, `Tag`, and `Journey` for OR dependency relationships — at least one target must be active. Multiple `depend_on_any()` calls create independent OR groups that are AND'd together
+- Add event loop health monitoring to `/healthz` endpoint — measures callback latency and reports `healthy`, `degraded`, or `unhealthy` status with peak latency over a configurable window
+- Add resolution tracking to the relational resolver — every entity that enters resolution gets a `Resolution` with a `ResolutionKind` (`NONE`, `DEPRIORITIZED`, `UNMET_DEPENDENCY_ALL`, `UNMET_DEPENDENCY_ANY`, `ENTAILED`) and structured `ResolutionDetails` (relationship ID, target IDs) explaining why
+
+### Changed
+
+- Split `RelationshipEntityKind.TAG` into `TAG_ALL` and `TAG_ANY` to support explicit tag dependency semantics at the core level (existing `TAG` entries treated as `TAG_ALL` for backwards compatibility)
+
+### Fixed
+
+- Fix priority and dependency relationships propagating through inactive intermediaries — only direct relationships now affect resolution, consistent with the reinstatement principle from argumentation theory
+- Fix entailment recording only the highest-scoring source when multiple guidelines entail the same target — all entailing relationships are now recorded in resolution details
+- Fix dep-failed guidelines not recovering when entailment satisfies their dependency target in a later iteration
+- Fix SDK startup appearing stuck at 100% after evaluations — add "Applying evaluations" progress bar for the metadata-writing phase
+- Fix `Variable.get_value()` returning `None` when called from a retriever, caused by retrievers starting before context variables were loaded
+- Fix journey tool-state auto-advancing even when the tool did not run
+
+## [3.3.0] - 2026-03-15
+
+### Added
+
+- Add per-agent planners via `Server.create_agent(planner=...)`, allowing each agent to use a custom `Planner` implementation
+- Accept `Tag` as a target in `depend_on()`, `exclude()`, and `prioritize_over()` on both `Guideline` and `Tag`, enabling relationships that target all guidelines sharing a custom tag
+- Add `Tag.depend_on()`, `Tag.exclude()`, and `Tag.prioritize_over()` methods to the SDK, enabling tag-based dependency and priority relationships with guidelines and journeys
+- Support custom TAG as source for DEPENDENCY relationships in the relational resolver
+- Add `tags` parameter to `create_guideline`, `create_observation`, and `create_journey` on both `Agent` and `Journey`, allowing custom tags to be attached to entities at creation time
+- Add `Tag.reevaluate_after()` method to the SDK, enabling tag-based reevaluation relationships with tools
+- Add tag-based reevaluation support in the engine: when a tool fires, all guidelines carrying a tag that has a reevaluation relationship with that tool are now re-evaluated
+- Add staged_events to GuidelineMatchingContext in SDK
+- Add `priority` property to guidelines and journeys for priority-based filtering in the relational resolver
+- Add transient guidelines (renamed from tool-provided guidelines), allowing tools to dynamically inject behavioral guidelines into the agent's context
+- Add `Agent.utter()` to the SDK, enabling programmatic agent message generation with transient guidelines
+- Add `Customer.update()` and `CustomerMetadata` to the SDK, allowing tools to update customer name and metadata
+- Add `Session.update()`, `SessionMetadata`, and `SessionLabels` to the SDK, allowing tools to update session properties, metadata, and labels
+- Add `customer`, `agent`, `mode`, and `title` properties to SDK `Session` class
+- Add `Server.get_tag()` to the SDK, supporting lookup by either `id` or `name`
+- Add name-based filtering to `TagStore.list_tags()` and the `GET /tags` API endpoint via an optional `name` query parameter
+- Enforce tag name uniqueness in `TagStore`, raising an error when creating a tag with a duplicate name
+
+### Changed
+
+- Made extended thinking indicator optional in perceived performance policy
+- Change `reevaluate_after()` on `Tag` and `Guideline` to accept multiple tools (`*tools`) and return `Sequence[Relationship]`
+- Change `tags` field type from `Sequence[TagId]` to `Sequence[Tag]` on `Guideline`, `Journey`, `Capability`, `Term`, `Variable`, `Customer`, and `Agent` in the SDK
+- Change `Tag.preamble()` to return a full `Tag` object instead of a `TagId`
+- Upgrade MCP service and bump dependency versions to resolve security vulnerabilities
+
+### Deprecated
+
+- OpenAPI tool services are now deprecated; please migrate to SDK tool services
+
+### Fixed
+
+- Fix deadlock when sending a new message right after a preamble
+- Fix transitive filtering in relational resolver for custom tag dependency targets (guidelines depending on a custom tag are now correctly deactivated when a tagged member is deprioritized)
+- Fix SSE `read_event` endpoint stalling after first streaming chunk until full completion
+- Fix response analysis logs not always reaching the integrated UI
+- Fix guideline formatting in canned response and streaming modes when condition is absent
+- Fix AzureService small text embedding dimension size
+- Fix onnxruntime compatibility with Python 3.10 and transformers 5.x type changes
+- Fix agent intention proposer prompt clarification
+- Fix embedding LRU cache eviction corrupting the length index when entries share the same text length
+- Fix LiteLLMEmbedder failing to resolve via lagom container when LITELLM_EMBEDDING_MODEL_NAME is set
+- Fix non-consequential tool calls being rejected when optional parameters are missing
+
+### Removed
+
+- Remove stale `parlant-test` entry point and testing framework documentation from README
+
+## [3.2.2] - 2026-02-18
+
+### Added
+
+- Added p.MATCH_ALWAYS, now the preferred alias to p.Guideline.MATCH_ALWAYS
+- Added `logger` property to p.Server
+
+### Changed
+
+- Adjusted log levels of relational resolver to trace instead of debug
+- Allow tool context parameter names to be all of 'context', 'ctx', and 'c'
+
+### Fixed
+
+- Fix completed streamed messages re-animating on page refresh
+- Propagate `Server.current` context to tool functions in hosted plugin server
+
+## [3.2.1] - 2026-02-17
+
+### Added
+
+- Add optional `dependencies` parameter to guideline, observation, and journey creation methods
+- Add `exclude()` as an alias for `prioritize_over()` on guidelines and journeys
+- Add `tools` parameter to `create_observation` methods
+
+### Changed
+
+- Deprecate `attach_tool()` in favor of `create_guideline()`/`create_observation()` with `tools` parameter
+
+### Fixed
+
+- Preserve draft message language during canned response recomposition
+- Fix server hang when an exception occurs during setup
+- Fix canned response field extraction to handle falsy values
+
+## [3.2.0] - 2026-02-08
+
+### Added
+
+- Add labels to Guidelines, Journeys, JourneyNodes, and Sessions for categorization and filtering
+- Add automatic session label propagation from matched entities (guidelines, observations, journeys)
+- Add `track` parameter to guidelines to control "previously applied" tracking
+- Support multiple targets in `prioritize_over()` and `depend_on()` methods
+- Add `field_dependencies` to canned responses for explicit field availability requirements
+- Add `attach_retriever()` to Guideline, Journey, and JourneyState for conditional data retrieval
+- Add `on_match` and `on_message` hooks to journeys for lifecycle callbacks
+- Add per-agent preamble configuration (custom examples and instructions)
+- Add separate default greeting responses for first agent message in fluid mode
+- Add streaming message output mode
+- Allow specifying custom journey node ID
+- Add matched guidelines/journey states to completion ready event
+
+### Changed
+
+- Make condition optional for SDK guidelines
+- Tweak default preamble examples
+- Soften log levels for relational guideline resolver
+- Add activated/skipped logs to custom guideline matcher batches
+
+### Fixed
+
+- Fix websocket warning upon startup
+- Fix agent intention proposer (guidelines were getting rewritten incorrectly)
+- Fix multiple customer guideline matchers not working
+- Fix bug with context variable access in SDK
+
+## [3.1.0] - 2026-01-05
+
+### Added
+
+- Add .current property for Server, Agent, and Customer in SDK
+- Add /healthz endpoint
+- Add API for CRUD operations on session metadata
+- Add EmcieService
 - Add GLM service
 - Add Mistral service
 - Add OpenRouter service
-- Add /healthz endpoint
-- Add .current propoerty for Server, Agent, and Customer in SDK
-- Support proxy URL for LiteLLM
-- Allow controlling max tool result payload via environment variable
-- Follow-up canned responses
-- Improved Gemini Flash 2.5 output consistency by using function call trick instead of structured outputs
-- Added persistence option for context variable values (variable store)
-- Add Fireworks service
-- Rename ContextualCorrelator to Tracer
 - Add OpenTelemetry integration for Meter, Logger and Tracer
-- Add API for CRUD operations on session metadata
-- Add deferred retrievers
-- Allow controlling perceived performance policy per agent
-- Expose IoC container in server object
-- Support code-based, custom guideline matchers
-- Added guideline descriptions
-- Add guideline on_match() hooks
-- Allow specifying custom IDs when creating journeys via SDK and API
-- Allow specifying custom IDs when creating guidelines via SDK and API
-- Allow specifying custom IDs when creating glossary via SDK and API
 - Add Qdrant VectorDatabase adapter
+- Add Snowflake Cortex service
+- Add ability to configure and extend the FastAPI app object
+- Add deferred retrievers
+- Add dynamic composition mode
+- Add follow-up canned responses
+- Add guideline criticality level
+- Add guideline on_match() hooks
+- Add persistence option for context variable values (variable store)
+- Added guideline descriptions
+- Allow bailing out of canned response selection and utilize the draft directly, using a hook
+- Allow controlling max tool result payload via environment variable
+- Allow controlling perceived performance policy per agent
+- Allow journey transitions from one tool state to another
+- Allow specifying custom IDs when creating agents via SDK and API
+- Allow specifying custom IDs when creating customers via SDK and API
+- Allow specifying custom IDs when creating guidelines, journeys, and glossary terms via SDK and API
+- Expose IoC container in server object
+- Support adding custom canrep fields to matched guidelines and journey states
+- Support code-based, custom guideline matchers
+
+### Changed
+
+- Changed default NLPService to EmcieService
+- Improved efficiency of journey state matching when first state is a tool state
+- Rename ContextualCorrelator to Tracer
+- Rename LoadedContext to EngineContext
+- Support proxy URL for LiteLLM
+
+### Fixed
+
 - Fix critical bug with cancellation during response analysis
 - Fix critical similarity calculation error in TransientVectorDatabase
-- Add guideline criticality level
-- Add ability to configure and extend the FastAPI app object
-- Add dynamic composition mode
-- Support adding custom canrep fields to matched guidelines and journey states
+- Fix unnecessary extra evaluation of journeys and tools in some edge cases
+- Improved Gemini Flash 2.5 output consistency by using function call trick instead of structured outputs
 
 ## [3.0.4] - 2025-11-18
 

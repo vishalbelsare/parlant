@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ from parlant.core.common import DefaultBaseModel, JSONSerializable
 from parlant.core.engines.alpha.guideline_matching.common import measure_guideline_matching_batch
 from parlant.core.engines.alpha.guideline_matching.generic.common import (
     GuidelineInternalRepresentation,
+    dump_guideline,
     internal_representation,
 )
 from parlant.core.engines.alpha.guideline_matching.guideline_match import (
@@ -125,7 +126,7 @@ class GenericActionableGuidelineMatchingBatch(GuidelineMatchingBatch):
 
                     for match in inference.content.checks:
                         if match.applies:
-                            self._logger.debug(f"Activated:\n{match.model_dump_json(indent=2)}")
+                            self._logger.debug(f"Matched:\n{match.model_dump_json(indent=2)}")
 
                             matches.append(
                                 GuidelineMatch(
@@ -135,7 +136,7 @@ class GenericActionableGuidelineMatchingBatch(GuidelineMatchingBatch):
                                 )
                             )
                         else:
-                            self._logger.debug(f"Skipped:\n{match.model_dump_json(indent=2)}")
+                            self._logger.debug(f"Not matched:\n{match.model_dump_json(indent=2)}")
 
                     return GuidelineMatchingBatchResult(
                         matches=matches,
@@ -215,6 +216,11 @@ class GenericActionableGuidelineMatchingBatch(GuidelineMatchingBatch):
 
         guidelines_text = "\n".join(
             f"{i}) Condition: {guideline_representations[g.id].condition}. Action: {guideline_representations[g.id].action}"
+            + (
+                f" Description: {guideline_representations[g.id].description}"
+                if guideline_representations[g.id].description
+                else ""
+            )
             for i, g in self._guidelines.items()
         )
 
@@ -284,7 +290,10 @@ Examples of Guideline Match Evaluations:
 {guidelines_text}
 ###
 """,
-            props={"guidelines_text": guidelines_text},
+            props={
+                "guidelines_text": guidelines_text,
+                "guidelines": [dump_guideline(g) for g in self._guidelines.values()],
+            },
             status=SectionStatus.ACTIVE,
         )
 
@@ -349,9 +358,7 @@ class GenericActionableGuidelineMatching(GuidelineMatchingStrategy):
         context: GuidelineMatchingContext,
     ) -> Sequence[GuidelineMatchingBatch]:
         journeys = (
-            self._entity_queries.find_journeys_on_which_this_guideline_depends.get(
-                guidelines[0].id, []
-            )
+            self._entity_queries.guideline_and_journeys_it_depends_on.get(guidelines[0].id, [])
             if guidelines
             else []
         )
@@ -388,17 +395,14 @@ class GenericActionableGuidelineMatching(GuidelineMatchingStrategy):
 
         return batches
 
-    def _get_optimal_batch_size(self, guidelines: dict[GuidelineId, Guideline]) -> int:
-        guideline_n = len(guidelines)
-
-        if guideline_n <= 10:
-            return 1
-        elif guideline_n <= 20:
-            return 2
-        elif guideline_n <= 30:
-            return 3
-        else:
-            return 5
+    def _get_optimal_batch_size(
+        self,
+        guidelines: dict[GuidelineId, Guideline],
+    ) -> int:
+        return self._optimization_policy.get_guideline_matching_batch_size(
+            len(guidelines),
+            hints={"type": GenericActionableGuidelineMatchingBatch},
+        )
 
     def _create_batch(
         self,

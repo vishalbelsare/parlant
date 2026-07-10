@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ class Test_that_journey_can_be_created_without_conditions(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Greeting the customer",
-            conditions=[],
+            triggers=[],
             description="1. Offer the customer a Pepsi",
         )
 
@@ -50,6 +50,32 @@ class Test_that_journey_can_be_created_without_conditions(SDKTest):
         assert journey.description == "1. Offer the customer a Pepsi"
 
 
+class Test_that_scoped_guideline_of_matched_journey_without_states_influence_response(SDKTest):
+    """Test that providing a custom ID to transition_to uses that ID."""
+
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Test Agent",
+            description="Test agent for custom state ID",
+        )
+
+        self.journey = await self.agent.create_journey(
+            title="Test Journey",
+            triggers=["Customer greets you"],
+            description="Test journey",
+        )
+
+        await self.journey.create_guideline(
+            matcher=p.Guideline.MATCH_ALWAYS,
+            condition="The customer greets you",
+            action="Immediately offer a Pepsi",
+        )
+
+    async def run(self, ctx: Context) -> None:
+        response = await ctx.send_and_receive_message("Hello!", recipient=self.agent)
+        assert "pepsi" in response.lower()
+
+
 class Test_that_condition_guidelines_are_tagged_for_created_journey(SDKTest):
     async def setup(self, server: p.Server) -> None:
         self.agent = await server.create_agent(
@@ -59,7 +85,7 @@ class Test_that_condition_guidelines_are_tagged_for_created_journey(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Greeting the customer",
-            conditions=["the customer greets you", "the customer says 'Howdy'"],
+            triggers=["the customer greets you", "the customer says 'Howdy'"],
             description="1. Offer the customer a Pepsi",
         )
 
@@ -69,10 +95,10 @@ class Test_that_condition_guidelines_are_tagged_for_created_journey(SDKTest):
 
         journey = await journey_store.read_journey(journey_id=self.journey.id)
         condition_guidelines = [
-            await guideline_store.read_guideline(guideline_id=g_id) for g_id in journey.conditions
+            await guideline_store.read_guideline(guideline_id=g_id) for g_id in journey.triggers
         ]
 
-        assert all(g.tags == [Tag.for_journey_id(self.journey.id)] for g in condition_guidelines)
+        assert all(g.tags == [Tag.for_journey_id(self.journey.id).id] for g in condition_guidelines)
 
 
 class Test_that_condition_guidelines_are_evaluated_in_journey_creation(SDKTest):
@@ -84,7 +110,7 @@ class Test_that_condition_guidelines_are_evaluated_in_journey_creation(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Greeting the customer",
-            conditions=["the customer greets you", "the customer says 'Howdy'"],
+            triggers=["the customer greets you", "the customer says 'Howdy'"],
             description="1. Offer the customer a Pepsi",
         )
 
@@ -95,7 +121,7 @@ class Test_that_condition_guidelines_are_evaluated_in_journey_creation(SDKTest):
         journey = await journey_store.read_journey(journey_id=self.journey.id)
 
         condition_guidelines = [
-            await guideline_store.read_guideline(guideline_id=g_id) for g_id in journey.conditions
+            await guideline_store.read_guideline(guideline_id=g_id) for g_id in journey.triggers
         ]
 
         assert all("continuous" in g.metadata for g in condition_guidelines)
@@ -111,7 +137,7 @@ class Test_that_guideline_creation_from_journey_creates_dependency_relationship(
 
         self.journey = await self.agent.create_journey(
             title="Greeting the customer",
-            conditions=["the customer greets you", "the customer says 'Howdy'"],
+            triggers=["the customer greets you", "the customer says 'Howdy'"],
             description="1. Offer the customer a Pepsi",
         )
 
@@ -130,7 +156,7 @@ class Test_that_guideline_creation_from_journey_creates_dependency_relationship(
 
         assert relationships
         assert len(relationships) == 1
-        assert relationships[0].target.id == Tag.for_journey_id(self.journey.id)
+        assert relationships[0].target.id == Tag.for_journey_id(self.journey.id).id
 
 
 class Test_that_journey_can_be_created_with_guideline_object_as_condition(SDKTest):
@@ -146,7 +172,7 @@ class Test_that_journey_can_be_created_with_guideline_object_as_condition(SDKTes
 
         self.journey = await self.agent.create_journey(
             title="Greeting the customer",
-            conditions=[self.condition_guideline],
+            triggers=[self.condition_guideline],
             description="1. Offer the customer a Pepsi",
         )
 
@@ -157,7 +183,7 @@ class Test_that_journey_can_be_created_with_guideline_object_as_condition(SDKTes
         journey = await journey_store.read_journey(journey_id=self.journey.id)
         guideline = await guideline_store.read_guideline(guideline_id=self.condition_guideline.id)
 
-        assert journey.conditions == [guideline.id]
+        assert journey.triggers == [guideline.id]
         assert guideline.id == self.condition_guideline.id
 
 
@@ -170,7 +196,7 @@ class Test_that_a_created_journey_is_followed(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Greeting the customer",
-            conditions=["the customer greets you"],
+            triggers=["the customer greets you"],
             description="Offer the customer a Pepsi",
         )
 
@@ -196,7 +222,7 @@ class Test_that_journey_transition_and_state_can_be_created_with_transition(SDKT
 
         self.journey = await self.agent.create_journey(
             title="State Journey",
-            conditions=[],
+            triggers=[],
             description="A journey with multiple states",
         )
 
@@ -229,7 +255,7 @@ class Test_that_journey_state_can_transition_to_a_tool(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="State Journey",
-            conditions=[],
+            triggers=[],
             description="A journey with multiple states",
         )
 
@@ -248,7 +274,9 @@ class Test_that_journey_state_can_transition_to_a_tool(SDKTest):
         assert state.tools
 
         assert len(state.tools) == 1
-        assert state.tools[0].tool.name == "test_tool"
+        first_tool = state.tools[0]
+        assert isinstance(first_tool, p.ToolEntry)
+        assert first_tool.tool.name == "test_tool"
 
 
 class Test_that_journey_state_can_be_transitioned_with_condition(SDKTest):
@@ -260,7 +288,7 @@ class Test_that_journey_state_can_be_transitioned_with_condition(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Conditioned-states Journey",
-            conditions=[],
+            triggers=[],
             description="A journey with states depending on customer decisions",
         )
 
@@ -323,7 +351,7 @@ class Test_that_if_state_has_more_than_one_transition_they_all_need_to_have_cond
 
         self.journey = await self.agent.create_journey(
             title="Conditioned-states Journey",
-            conditions=[],
+            triggers=[],
             description="A journey with states depending on customer decisions",
         )
 
@@ -352,7 +380,7 @@ class Test_that_journey_is_reevaluated_after_tool_call(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Step Journey",
-            conditions=[],
+            triggers=[],
             description="A journey with tool-driven decision steps",
         )
 
@@ -377,14 +405,17 @@ class Test_that_journey_is_reevaluated_after_tool_call(SDKTest):
             kind=RelationshipKind.REEVALUATION,
             source_id=Tag.for_journey_node_id(
                 self.transition_check_balance.target.id,
-            ),
+            ).id,
         )
 
         assert relationships
         assert len(relationships) == 1
         assert relationships[0].kind == RelationshipKind.REEVALUATION
-        assert relationships[0].source.id == Tag.for_journey_node_id(
-            self.transition_check_balance.target.id,
+        assert (
+            relationships[0].source.id
+            == Tag.for_journey_node_id(
+                self.transition_check_balance.target.id,
+            ).id
         )
 
         assert relationships[0].target.id == ToolId(
@@ -401,7 +432,7 @@ class Test_that_journey_state_can_transition_to_end_state(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="End State Journey",
-            conditions=[],
+            triggers=[],
             description="A journey that ends",
         )
 
@@ -421,7 +452,7 @@ class Test_that_journey_state_can_be_created_with_internal_action(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Deliver Calzone Journey",
-            conditions=["the customer wants to order a calzone"],
+            triggers=["the customer wants to order a calzone"],
             description="A journey to deliver calzones",
         )
 
@@ -452,39 +483,179 @@ class Test_that_journey_state_can_be_created_with_internal_action(SDKTest):
         )
 
 
-class Test_that_journey_can_prioritize_another_journey(SDKTest):
-    STARTUP_TIMEOUT = 120
-
+class Test_that_journey_can_take_priority_over_another_journey(SDKTest):
     async def setup(self, server: p.Server) -> None:
         self.agent = await server.create_agent(
-            name="Journey Rel Agent",
-            description="Agent testing journey-to-journey relationship",
+            name="Test Agent",
+            description="",
         )
 
-        self.journey_a = await self.agent.create_journey(
-            title="Process Return",
-            conditions=["customer wants to return a product"],
-            description="Handle product returns",
+        # Both journeys match when customer asks about drinks
+        self.high_priority = await self.agent.create_journey(
+            title="Journey 1",
+            triggers=["Customer asks about drinks"],
+            description="",
         )
 
-        self.journey_b = await self.agent.create_journey(
-            title="Offer Exchange",
-            conditions=["customer is unsure about return"],
-            description="Suggest product exchanges",
+        await self.high_priority.create_guideline(
+            matcher=p.Guideline.MATCH_ALWAYS,
+            action="Recommend Pepsi",
         )
 
-        self.relationship = await self.journey_a.prioritize_over(self.journey_b)
+        self.low_priority = await self.agent.create_journey(
+            title="Journey 2",
+            triggers=["Customer asks about drinks"],
+            description="",
+        )
+
+        await self.low_priority.create_guideline(
+            matcher=p.Guideline.MATCH_ALWAYS,
+            action="Recommend Coca-Cola",
+        )
+
+        await self.high_priority.prioritize_over(self.low_priority)
 
     async def run(self, ctx: Context) -> None:
-        relationship_store = ctx.container[RelationshipStore]
-
-        relationship = await relationship_store.read_relationship(
-            relationship_id=self.relationship.id
+        response = await ctx.send_and_receive_message(
+            customer_message="What drinks do you have?",
+            recipient=self.agent,
         )
 
-        assert relationship.kind == RelationshipKind.PRIORITY
-        assert relationship.source.id == Tag.for_journey_id(self.journey_a.id)
-        assert relationship.target.id == Tag.for_journey_id(self.journey_b.id)
+        # High priority journey's recommendation should apply
+        assert "pepsi" in response.lower(), f"Expected Pepsi in response: {response}"
+        # Low priority journey's recommendation should NOT apply
+        assert "cola" not in response.lower() and "coke" not in response.lower(), (
+            f"Did not expect Coca-Cola in response: {response}"
+        )
+
+
+class Test_that_journey_can_take_priority_over_a_guideline(SDKTest):
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Test Agent",
+            description="",
+        )
+
+        # Guideline that matches when customer asks about drinks
+        self.guideline = await self.agent.create_guideline(
+            condition="Customer asks about drinks",
+            action="Recommend Coca-Cola",
+        )
+
+        # Journey that also matches when customer asks about drinks
+        self.journey = await self.agent.create_journey(
+            title="Drink Recommendation Journey",
+            triggers=["Customer asks about drinks"],
+            description="Recommend Pepsi to the customer",
+        )
+
+        await self.journey.create_guideline(
+            matcher=p.Guideline.MATCH_ALWAYS,
+            action="Recommend Pepsi",
+        )
+
+        await self.journey.prioritize_over(self.guideline)
+
+    async def run(self, ctx: Context) -> None:
+        response = await ctx.send_and_receive_message(
+            customer_message="What drinks do you have?",
+            recipient=self.agent,
+        )
+
+        # Journey's recommendation should apply
+        assert "pepsi" in response.lower(), f"Expected Pepsi in response: {response}"
+        # Guideline's recommendation should NOT apply
+        assert "cola" not in response.lower() and "coke" not in response.lower(), (
+            f"Did not expect Coca-Cola in response: {response}"
+        )
+
+
+class Test_that_tagged_journey_takes_priority_over_a_guideline_via_tag_relationship(SDKTest):
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Test Agent",
+            description="",
+        )
+
+        t1 = await server.create_tag("t1")
+
+        # Guideline that matches when customer is thirsty
+        self.guideline = await self.agent.create_guideline(
+            condition="Customer is thirsty",
+            action="Offer a banana smoothie",
+        )
+
+        # Journey tagged with t1 that also matches when customer is thirsty
+        self.journey = await self.agent.create_journey(
+            title="Drink Recommendation Journey",
+            triggers=["Customer is thirsty"],
+            description="",
+            tags=[t1],
+        )
+
+        # Use transition_to to create node guidelines (which carry journey's custom tags)
+        await self.journey.initial_state.transition_to(
+            chat_state="Offer a Pepsi to the customer",
+        )
+
+        # t1 (journey's custom tag) prioritizes over the standalone guideline
+        await t1.prioritize_over(self.guideline)
+
+    async def run(self, ctx: Context) -> None:
+        response = await ctx.send_and_receive_message(
+            customer_message="I'm thirsty",
+            recipient=self.agent,
+        )
+
+        # Journey's recommendation should apply
+        assert "pepsi" in response.lower(), f"Expected 'Pepsi' in response: {response}"
+        # Guideline's recommendation should NOT apply
+        assert "banana" not in response.lower(), f"Did not expect 'Banana' in response: {response}"
+
+
+class Test_that_tagged_journey_takes_priority_over_a_guideline_via_tag_to_tag_relationship(SDKTest):
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Test Agent",
+            description="",
+        )
+
+        t1 = await server.create_tag("t1")
+        t2 = await server.create_tag("t2")
+
+        # Guideline that matches when customer is thirsty
+        self.guideline = await self.agent.create_guideline(
+            condition="Customer is thirsty",
+            action="Offer a banana smoothie",
+            tags=[t2],
+        )
+
+        # Journey tagged with t1 that also matches when customer is thirsty
+        self.journey = await self.agent.create_journey(
+            title="Drink Recommendation Journey",
+            triggers=["Customer is thirsty"],
+            description="",
+            tags=[t1],
+        )
+
+        # Use transition_to to create node guidelines (which carry journey's custom tags)
+        await self.journey.initial_state.transition_to(
+            chat_state="Offer a Pepsi to the customer",
+        )
+
+        # t1 (journey's custom tag) prioritizes over the standalone guideline
+        await t1.prioritize_over(t2)
+
+    async def run(self, ctx: Context) -> None:
+        response = await ctx.send_and_receive_message(
+            customer_message="I'm thirsty",
+            recipient=self.agent,
+        )
+
+        # Journey's recommendation should apply
+        assert "pepsi" in response.lower(), f"Expected 'Pepsi' in response: {response}"
+        # Guideline's recommendation should NOT apply
+        assert "banana" not in response.lower(), f"Did not expect 'Banana' in response: {response}"
 
 
 class Test_that_journey_can_depend_on_a_guideline(SDKTest):
@@ -501,22 +672,87 @@ class Test_that_journey_can_depend_on_a_guideline(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Sensitive Account Help",
-            conditions=["customer requests password reset"],
+            triggers=["customer requests password reset"],
             description="Assist customer securely",
         )
 
-        self.relationship = await self.journey.depend_on(self.guideline)
+        self.relationships = await self.journey.depend_on(self.guideline)
 
     async def run(self, ctx: Context) -> None:
         relationship_store = ctx.container[RelationshipStore]
 
         relationship = await relationship_store.read_relationship(
-            relationship_id=self.relationship.id
+            relationship_id=self.relationships[0].id
         )
 
         assert relationship.kind == RelationshipKind.DEPENDENCY
-        assert relationship.source.id == Tag.for_journey_id(self.journey.id)
+        assert relationship.source.id == Tag.for_journey_id(self.journey.id).id
         assert relationship.target.id == self.guideline.id
+
+
+class Test_that_journey_can_be_created_with_inline_dependencies(SDKTest):
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Journey Inline Deps Agent",
+            description="Agent for journey inline dependency creation",
+        )
+
+        self.guideline = await self.agent.create_guideline(
+            condition="Customer must confirm identity",
+            action="Ask for verification",
+        )
+
+        self.journey = await self.agent.create_journey(
+            title="Account Recovery",
+            triggers=["customer requests password reset"],
+            description="Assist customer with account recovery",
+            dependencies=[self.guideline],
+        )
+
+    async def run(self, ctx: Context) -> None:
+        relationship_store = ctx.container[RelationshipStore]
+        relationships = await relationship_store.list_relationships(
+            source_id=Tag.for_journey_id(self.journey.id).id,
+            kind=RelationshipKind.DEPENDENCY,
+        )
+
+        assert len(relationships) == 1
+        assert relationships[0].target.id == self.guideline.id
+
+
+class Test_that_journey_guideline_can_be_created_with_inline_dependencies(SDKTest):
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Journey GL Deps Agent",
+            description="Agent for journey guideline inline dependencies",
+        )
+
+        self.journey = await self.agent.create_journey(
+            title="Support Journey",
+            triggers=["Customer needs help"],
+            description="Handle support requests",
+        )
+
+        self.g1 = await self.journey.create_guideline(
+            condition="Customer describes a problem",
+            action="Acknowledge the problem",
+        )
+
+        self.g2 = await self.journey.create_guideline(
+            condition="Customer provides details",
+            action="Summarize the issue",
+            dependencies=[self.g1],
+        )
+
+    async def run(self, ctx: Context) -> None:
+        relationship_store = ctx.container[RelationshipStore]
+        relationships = await relationship_store.list_relationships(
+            source_id=self.g2.id,
+            kind=RelationshipKind.DEPENDENCY,
+        )
+
+        target_ids = {r.target.id for r in relationships}
+        assert self.g1.id in target_ids
 
 
 class Test_that_journey_guideline_can_be_created_with_canned_responses(SDKTest):
@@ -528,7 +764,7 @@ class Test_that_journey_guideline_can_be_created_with_canned_responses(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Customer Support Journey",
-            conditions=["Customer needs assistance"],
+            triggers=["Customer needs assistance"],
             description="Handle customer support requests",
         )
 
@@ -551,8 +787,8 @@ class Test_that_journey_guideline_can_be_created_with_canned_responses(SDKTest):
         updated_canrep1 = await canrep_store.read_canned_response(self.canrep1)
         updated_canrep2 = await canrep_store.read_canned_response(self.canrep2)
 
-        assert Tag.for_guideline_id(self.guideline.id) in updated_canrep1.tags
-        assert Tag.for_guideline_id(self.guideline.id) in updated_canrep2.tags
+        assert Tag.for_guideline_id(self.guideline.id).id in updated_canrep1.tags
+        assert Tag.for_guideline_id(self.guideline.id).id in updated_canrep2.tags
 
 
 class Test_that_journey_guideline_with_tools_can_have_canned_responses(SDKTest):
@@ -564,7 +800,7 @@ class Test_that_journey_guideline_with_tools_can_have_canned_responses(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Tool-assisted Journey",
-            conditions=["Customer needs technical help"],
+            triggers=["Customer needs technical help"],
             description="Provide technical assistance with tools",
         )
 
@@ -588,7 +824,7 @@ class Test_that_journey_guideline_with_tools_can_have_canned_responses(SDKTest):
 
         updated_canrep = await canrep_store.read_canned_response(self.canrep)
 
-        assert Tag.for_guideline_id(self.guideline.id) in updated_canrep.tags
+        assert Tag.for_guideline_id(self.guideline.id).id in updated_canrep.tags
 
 
 class Test_that_journey_state_can_have_its_own_canned_responses(SDKTest):
@@ -601,7 +837,7 @@ class Test_that_journey_state_can_have_its_own_canned_responses(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Customer Greeting Journey",
-            conditions=["Customer arrives"],
+            triggers=["Customer arrives"],
             description="Greet customers with personalized responses",
         )
 
@@ -627,8 +863,8 @@ class Test_that_journey_state_can_have_its_own_canned_responses(SDKTest):
         stored_canrep1 = await canrep_store.read_canned_response(self.canrep1)
         stored_canrep2 = await canrep_store.read_canned_response(self.canrep2)
 
-        assert Tag.for_journey_node_id(self.initial_transition.target.id) in stored_canrep1.tags
-        assert Tag.for_journey_node_id(self.second_transition.target.id) in stored_canrep2.tags
+        assert Tag.for_journey_node_id(self.initial_transition.target.id).id in stored_canrep1.tags
+        assert Tag.for_journey_node_id(self.second_transition.target.id).id in stored_canrep2.tags
 
         response = await ctx.send_and_receive_message_event("Hello", recipient=self.agent)
 
@@ -657,7 +893,7 @@ class Test_that_a_journey_is_reevaluated_after_a_skipped_tool_call(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Handle Thirsty Customer",
-            conditions=["Customer is thirsty"],
+            triggers=["Customer is thirsty"],
             description="Help a thirsty customer with a refreshing drink",
         )
 
@@ -687,7 +923,7 @@ class Test_that_a_journey_is_reevaluated_after_a_skipped_tool_call(SDKTest):
 class Test_that_a_missing_data_is_shown_after_journey_is_reevaluated(SDKTest):
     async def setup(self, server: p.Server) -> None:
         @tool
-        def get_customer_last_time_drank(context: ToolContext, customer_name: str) -> ToolResult:
+        def get_customer_last_time_drank(context: ToolContext, customer_age: int) -> ToolResult:
             return ToolResult(data={"last_time_drank": "January 1, 2000"})
 
         self.agent = await server.create_agent(
@@ -697,7 +933,7 @@ class Test_that_a_missing_data_is_shown_after_journey_is_reevaluated(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Handle Thirsty Customer",
-            conditions=["Customer is thirsty"],
+            triggers=["Customer is thirsty"],
             description="Help a thirsty customer with a refreshing drink",
         )
 
@@ -716,7 +952,7 @@ class Test_that_a_missing_data_is_shown_after_journey_is_reevaluated(SDKTest):
             "I'm really thirsty", recipient=self.agent, reuse_session=True
         )
 
-        assert await nlp_test(first_response, "It asks for the customer's name")
+        assert await nlp_test(first_response, "It asks for the customer's age")
 
 
 class Test_that_metadata_can_be_set_to_a_journey_state(SDKTest):
@@ -728,7 +964,7 @@ class Test_that_metadata_can_be_set_to_a_journey_state(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Metadata Journey",
-            conditions=["Customer requests information"],
+            triggers=["Customer requests information"],
             description="Provide information with metadata tracking",
         )
 
@@ -761,7 +997,7 @@ class Test_that_journey_can_have_a_scoped_guideline(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Order Something",
-            conditions=["The customer wants to order something"],
+            triggers=["The customer wants to order something"],
             description="Help the customer place an order",
         )
 
@@ -796,7 +1032,7 @@ class Test_that_journey_can_be_created_with_custom_id(SDKTest):
 
         self.journey = await self.agent.create_journey(
             title="Custom ID Journey",
-            conditions=["Customer needs help"],
+            triggers=["Customer needs help"],
             description="Journey with custom ID",
             id=self.custom_id,
         )
@@ -825,7 +1061,7 @@ class Test_that_journey_creation_fails_with_duplicate_id(SDKTest):
         # Create the first journey
         self.first_journey = await self.agent.create_journey(
             title="First Journey",
-            conditions=["First condition"],
+            triggers=["First condition"],
             description="First journey with duplicate ID",
             id=self.duplicate_id,
         )
@@ -837,7 +1073,7 @@ class Test_that_journey_creation_fails_with_duplicate_id(SDKTest):
         ):
             await self.agent.create_journey(
                 title="Second Journey",
-                conditions=["Second condition"],
+                triggers=["Second condition"],
                 description="Second journey with duplicate ID",
                 id=self.duplicate_id,
             )
@@ -853,7 +1089,7 @@ class Test_that_end_journey_match_handlers_are_called(SDKTest):
         self.journey = await self.agent.create_journey(
             title="Order Process",
             description="Order processing journey",
-            conditions=["Customer wants to place an order"],
+            triggers=["Customer wants to place an order"],
         )
 
         # Track which exit handler was called
@@ -877,14 +1113,14 @@ class Test_that_end_journey_match_handlers_are_called(SDKTest):
         await confirmation_state.target.transition_to(
             condition="Customer confirms the order",
             state=p.END_JOURNEY,
-            on_match=success_exit_handler,
+            on_selected=success_exit_handler,
         )
 
         # Exit path 2: Customer cancels order (cancel path)
         await confirmation_state.target.transition_to(
             condition="Customer wants to cancel",
             state=p.END_JOURNEY,
-            on_match=cancel_exit_handler,
+            on_selected=cancel_exit_handler,
         )
 
     async def run(self, ctx: Context) -> None:
@@ -923,13 +1159,13 @@ class Test_that_journey_state_match_handler_is_called(SDKTest):
         self.journey = await self.agent.create_journey(
             title="Order Something",
             description="Journey to handle orders",
-            conditions=["Customer wants to order something"],
+            triggers=["Customer wants to order something"],
         )
 
         self.state = await self.journey.initial_state.transition_to(
             condition="Customer confirmed order",
             chat_state="Great! Your order is confirmed.",
-            on_match=state_match_handler,
+            on_selected=state_match_handler,
         )
 
     async def run(self, ctx: Context) -> None:
@@ -954,7 +1190,7 @@ class Test_that_journey_state_can_be_created_with_description(SDKTest):
         self.journey = await self.agent.create_journey(
             title="Pizza Ordering",
             description="Handle pizza orders",
-            conditions=["Customer wants to order pizza"],
+            triggers=["Customer wants to order pizza"],
         )
 
         self.transition = await self.journey.initial_state.transition_to(
@@ -985,7 +1221,7 @@ class Test_that_journey_state_description_affects_agent_behavior(SDKTest):
         self.journey = await self.agent.create_journey(
             title="Spaceship Maintenance",
             description="Handle spaceship maintenance requests",
-            conditions=["Customer asks about spaceship maintenance"],
+            triggers=["Customer asks about spaceship maintenance"],
         )
 
         await self.journey.initial_state.transition_to(
@@ -1017,7 +1253,7 @@ class Test_that_different_state_types_support_description(SDKTest):
         self.journey = await self.agent.create_journey(
             title="Order Processing",
             description="Process customer orders",
-            conditions=["Customer wants to place an order"],
+            triggers=["Customer wants to place an order"],
         )
 
         # ChatJourneyState with description
@@ -1069,7 +1305,7 @@ class Test_that_on_message_handler_is_called_for_journey_state_when_message_gene
         self.journey = await self.agent.create_journey(
             title="Book Appointment",
             description="Journey to book appointments",
-            conditions=["Customer wants to book an appointment"],
+            triggers=["Customer wants to book an appointment"],
         )
 
         self.state = await self.journey.initial_state.transition_to(
@@ -1106,7 +1342,7 @@ class Test_that_journey_state_field_provider_contributes_fields_to_canned_respon
         self.journey = await self.agent.create_journey(
             title="Order Journey",
             description="Handle customer orders",
-            conditions=["Customer wants to order"],
+            triggers=["Customer wants to order"],
         )
 
         canrep_id = await self.agent.create_canned_response(
@@ -1117,7 +1353,7 @@ class Test_that_journey_state_field_provider_contributes_fields_to_canned_respon
             return {"order_number": 12345}
 
         self.state = await self.journey.initial_state.transition_to(
-            chat_state="Confirm the order",
+            chat_state="Tell them their order number is 12345",
             composition_mode=p.CompositionMode.STRICT,
             canned_responses=[canrep_id],
             canned_response_field_provider=provide_order_fields,
@@ -1162,7 +1398,7 @@ class Test_that_journey_can_link_to_another_journey_with_validation(SDKTest):
         # Create the user validation journey
         self.validate_user_journey = await self.agent.create_journey(
             title="Validate User",
-            conditions=[],
+            triggers=[],
             description="Validate the user by asking for their name and verifying it",
         )
 
@@ -1181,7 +1417,7 @@ class Test_that_journey_can_link_to_another_journey_with_validation(SDKTest):
         # Create the hotel booking journey
         self.book_hotel_journey = await self.agent.create_journey(
             title="Book Hotel",
-            conditions=["Customer wants to book a hotel"],
+            triggers=["Customer wants to book a hotel"],
             description="Booking a hotel room for the customer",
         )
 
@@ -1272,7 +1508,7 @@ class Test_that_journey_can_conditionally_link_to_different_sub_journeys(SDKTest
         # Create technical support sub-journey
         self.tech_support_journey = await self.agent.create_journey(
             title="Technical Support",
-            conditions=[],
+            triggers=[],
             description="Handle technical support requests",
         )
 
@@ -1294,7 +1530,7 @@ class Test_that_journey_can_conditionally_link_to_different_sub_journeys(SDKTest
         # Create billing support sub-journey
         self.billing_support_journey = await self.agent.create_journey(
             title="Billing Support",
-            conditions=[],
+            triggers=[],
             description="Handle billing and account inquiries",
         )
 
@@ -1316,7 +1552,7 @@ class Test_that_journey_can_conditionally_link_to_different_sub_journeys(SDKTest
         # Create main customer service journey
         self.main_journey = await self.agent.create_journey(
             title="Customer Service",
-            conditions=["Customer needs support"],
+            triggers=["Customer needs support"],
             description="Route customers to appropriate support channels",
         )
 
@@ -1393,7 +1629,7 @@ class Test_that_three_journeys_can_be_concatenated(SDKTest):
         # Journey 1: Collect name
         self.journey1 = await self.agent.create_journey(
             title="Journey 1 - Name Collection",
-            conditions=[],
+            triggers=[],
             description="First journey to collect name",
         )
 
@@ -1405,7 +1641,7 @@ class Test_that_three_journeys_can_be_concatenated(SDKTest):
         # Journey 2: Collect favorite color
         self.journey2 = await self.agent.create_journey(
             title="Journey 2 - Color Collection",
-            conditions=[],
+            triggers=[],
             description="Second journey to collect favorite color",
         )
 
@@ -1417,7 +1653,7 @@ class Test_that_three_journeys_can_be_concatenated(SDKTest):
         # Journey 3: Final completion
         self.journey3 = await self.agent.create_journey(
             title="Journey 3 - Completion",
-            conditions=[],
+            triggers=[],
             description="Third journey to complete process",
         )
 
@@ -1429,7 +1665,7 @@ class Test_that_three_journeys_can_be_concatenated(SDKTest):
         # Main journey that chains all three journeys
         self.main_journey = await self.agent.create_journey(
             title="Main Journey",
-            conditions=["Customer wants to start process"],
+            triggers=["Customer wants to start process"],
             description="Main journey that connects the three sub-journeys",
         )
 
@@ -1474,7 +1710,7 @@ class Test_that_three_journeys_can_be_concatenated(SDKTest):
 
 
 @pytest.mark.engine
-class Test_that_journey_is_not_reevaluated_when_not_associated_tool_is_called(SDKTest):
+class Test_that_journey_is_not_reevaluated_when_no_associated_tool_is_called(SDKTest):
     async def setup(self, server: p.Server) -> None:
         self.agent = await server.create_agent(
             name="Bank Agent",
@@ -1495,24 +1731,572 @@ class Test_that_journey_is_not_reevaluated_when_not_associated_tool_is_called(SD
 
         self.journey = await self.agent.create_journey(
             title="Customer Greeting Journey",
-            conditions=["Customer arrives"],
+            triggers=["Customer greets you"],
             description="Greet customers with personalized responses",
         )
 
         self.initial_transition = await self.journey.initial_state.transition_to(
             chat_state="Greet him with 'Howdy!'",
-            condition="The customer balance is not known",
+            condition="Customer greets you",
         )
 
         self.second_transition = await self.initial_transition.target.transition_to(
-            chat_state="Greet the customer to our bank",
-            condition="The customer balance is known",
+            chat_state="Greet the customer to our bank with 'Hahoy!'",
+            condition="The customer's account balance is known",
         )
 
     async def run(self, ctx: Context) -> None:
         response = await ctx.send_and_receive_message(
-            "Hey, Whats my balance?", recipient=self.agent
+            "Good morning! What's my balance, please?", recipient=self.agent
         )
 
         assert "500" in response
         assert "Howdy" in response
+        assert "Hahoy" not in response
+
+
+class Test_that_ready_event_contains_matched_guidelines_journeys_and_states(SDKTest):
+    """Test that the ready event with stage=completed contains match data."""
+
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Test Agent",
+            description="Test agent for match data verification",
+        )
+
+        # Create a guideline
+        self.guideline = await self.agent.create_guideline(
+            condition="Customer greets you",
+            action="Greet them back warmly",
+        )
+
+        # Create a journey with a custom state ID
+        self.journey = await self.agent.create_journey(
+            title="Greeting Journey",
+            triggers=["Customer greets you"],
+            description="Handle customer greetings",
+        )
+
+        # Create a state with a custom ID
+        self.transition = await self.journey.initial_state.transition_to(
+            chat_state="Say hello back warmly",
+            condition="Customer greets you",
+            id=p.JourneyStateId("test-greeting-state"),
+        )
+
+    async def run(self, ctx: Context) -> None:
+        # Create a session and send a message
+        session = await ctx.client.sessions.create(
+            agent_id=self.agent.id,
+            allow_greeting=False,
+        )
+
+        customer_event = await ctx.client.sessions.create_event(
+            session_id=session.id,
+            kind="message",
+            source="customer",
+            message="Hello there!",
+        )
+
+        # Wait for the agent to respond
+        await ctx.client.sessions.list_events(
+            session_id=session.id,
+            min_offset=customer_event.offset,
+            source="ai_agent",
+            kinds="message",
+            wait_for_data=30,
+        )
+
+        # Get all status events
+        status_events = await ctx.client.sessions.list_events(
+            session_id=session.id,
+            source="ai_agent",
+            kinds="status",
+        )
+
+        # Find the ready event with stage=completed
+        ready_completed_events = []
+        for e in status_events:
+            if e.data is None:
+                continue
+            inner_data = e.data.get("data", {})
+            if not isinstance(inner_data, dict):
+                continue
+            if e.data.get("status") == "ready" and inner_data.get("stage") == "completed":
+                ready_completed_events.append(e)
+
+        assert len(ready_completed_events) >= 1, "Expected at least one ready/completed event"
+
+        ready_event = ready_completed_events[-1]  # Get the last one
+        assert ready_event.data is not None
+        event_data = ready_event.data.get("data", {})
+        assert isinstance(event_data, dict)
+
+        # Verify matched_guidelines is present and contains guideline IDs
+        assert "matched_guidelines" in event_data, "matched_guidelines not found in ready event"
+        matched_guidelines = event_data["matched_guidelines"]
+        assert isinstance(matched_guidelines, list), "matched_guidelines should be a list"
+
+        # Verify matched_journeys is present
+        assert "matched_journeys" in event_data, "matched_journeys not found in ready event"
+        matched_journeys = event_data["matched_journeys"]
+        assert isinstance(matched_journeys, list), "matched_journeys should be a list"
+
+        # Verify matched_journey_states is present
+        assert "matched_journey_states" in event_data, (
+            "matched_journey_states not found in ready event"
+        )
+        matched_journey_states = event_data["matched_journey_states"]
+        assert isinstance(matched_journey_states, list), "matched_journey_states should be a list"
+
+        # Verify structure - each should have an "id" key
+        for g in matched_guidelines:
+            assert "id" in g, "Each matched guideline should have an 'id' key"
+
+        for j in matched_journeys:
+            assert "id" in j, "Each matched journey should have an 'id' key"
+
+        for s in matched_journey_states:
+            assert "id" in s, "Each matched journey state should have an 'id' key"
+
+
+class Test_that_custom_state_id_is_used_when_provided(SDKTest):
+    """Test that providing a custom ID to transition_to uses that ID."""
+
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Test Agent",
+            description="Test agent for custom state ID",
+        )
+
+        self.journey = await self.agent.create_journey(
+            title="Test Journey",
+            triggers=["Customer greets you"],
+            description="Test journey",
+        )
+
+        # Create a state with a custom ID
+        self.custom_state_id = p.JourneyStateId("my-custom-state-id")
+        self.transition = await self.journey.initial_state.transition_to(
+            chat_state="Test action",
+            condition="Test condition",
+            id=self.custom_state_id,
+        )
+
+    async def run(self, ctx: Context) -> None:
+        journey_store = ctx.container[JourneyStore]
+
+        # Read the node and verify the ID
+        node = await journey_store.read_node(self.custom_state_id)
+
+        assert node.id == self.custom_state_id, f"Expected ID {self.custom_state_id}, got {node.id}"
+
+
+class Test_that_journey_retriever_runs_when_journey_is_active(SDKTest):
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Journey Retriever Agent",
+            description="Agent for testing journey retrievers",
+        )
+
+        journey = await self.agent.create_journey(
+            title="Secret Journey",
+            description="A journey about secrets",
+            triggers=["the user wants to learn secrets"],
+        )
+
+        async def my_retriever(ctx: p.RetrieverContext) -> p.RetrieverResult:
+            return p.RetrieverResult(data="The journey secret is 99")
+
+        await journey.attach_retriever(my_retriever)
+
+    async def run(self, ctx: Context) -> None:
+        response = await ctx.send_and_receive_message(
+            customer_message="I want to learn secrets",
+            recipient=self.agent,
+        )
+        assert "99" in response
+
+
+class Test_that_journey_retriever_does_not_run_when_journey_is_inactive(SDKTest):
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Journey Retriever Agent",
+            description="Agent for testing journey retrievers",
+        )
+
+        self.retriever_called = False
+
+        journey = await self.agent.create_journey(
+            title="Secret Journey",
+            description="A journey about secrets",
+            triggers=["the user wants to learn secrets"],
+        )
+
+        async def my_retriever(ctx: p.RetrieverContext) -> p.RetrieverResult:
+            self.retriever_called = True
+            return p.RetrieverResult(data="The journey secret is 99")
+
+        await journey.attach_retriever(my_retriever)
+
+    async def run(self, ctx: Context) -> None:
+        # Ask about something unrelated, journey should not be active
+        await ctx.send_and_receive_message(
+            customer_message="What is the weather like today?",
+            recipient=self.agent,
+        )
+        assert not self.retriever_called, "Retriever should not be called when journey is inactive"
+
+
+class Test_that_journey_on_selected_is_called_when_journey_without_states_is_activated(SDKTest):
+    """Test that journey on_selected handler is called when a journey without states is activated."""
+
+    async def setup(self, server: p.Server) -> None:
+        self.on_selected_called = False
+        self.captured_journey_id = None
+
+        async def on_selected_handler(_ctx: p.EngineContext, match: p.JourneyMatch) -> None:
+            self.on_selected_called = True
+            self.captured_journey_id = match.journey_id
+
+        self.agent = await server.create_agent(
+            name="Journey Handler Agent",
+            description="Agent for testing journey on_selected handler",
+        )
+
+        self.journey = await self.agent.create_journey(
+            title="Simple Journey",
+            description="A journey without any states",
+            triggers=["Customer asks about ordering"],
+            on_selected=on_selected_handler,
+        )
+
+        # Add a scoped guideline so the journey has some effect
+        await self.journey.create_guideline(
+            matcher=p.Guideline.MATCH_ALWAYS,
+            action="Offer the customer a Pepsi",
+        )
+
+    async def run(self, ctx: Context) -> None:
+        await ctx.send_and_receive_message(
+            customer_message="I'd like to order something",
+            recipient=self.agent,
+        )
+
+        assert self.on_selected_called, "Journey on_selected handler should have been called"
+        assert self.captured_journey_id == self.journey.id, (
+            f"Expected journey ID {self.journey.id}, got {self.captured_journey_id}"
+        )
+
+
+class Test_that_journey_on_selected_is_called_when_journey_with_states_is_activated(SDKTest):
+    """Test that journey on_selected handler is called when a journey with states is activated."""
+
+    async def setup(self, server: p.Server) -> None:
+        self.on_selected_called = False
+        self.captured_journey_id = None
+
+        async def on_selected_handler(_ctx: p.EngineContext, match: p.JourneyMatch) -> None:
+            self.on_selected_called = True
+            self.captured_journey_id = match.journey_id
+
+        self.agent = await server.create_agent(
+            name="Journey Handler Agent",
+            description="Agent for testing journey on_selected handler with states",
+        )
+
+        self.journey = await self.agent.create_journey(
+            title="Stateful Journey",
+            description="A journey with states",
+            triggers=["Customer wants to order a pizza"],
+            on_selected=on_selected_handler,
+        )
+
+        # Add states to the journey
+        self.transition = await self.journey.initial_state.transition_to(
+            chat_state="Ask the customer what toppings they want",
+        )
+
+    async def run(self, ctx: Context) -> None:
+        await ctx.send_and_receive_message(
+            customer_message="I want to order a pizza",
+            recipient=self.agent,
+        )
+
+        assert self.on_selected_called, "Journey on_selected handler should have been called"
+        assert self.captured_journey_id == self.journey.id, (
+            f"Expected journey ID {self.journey.id}, got {self.captured_journey_id}"
+        )
+
+
+class Test_that_journey_on_selected_is_called_when_linked_journey_is_activated(SDKTest):
+    """Test that journey on_selected handler is called when a linked journey is activated."""
+
+    async def setup(self, server: p.Server) -> None:
+        self.parent_on_selected_called = False
+        self.linked_on_selected_called = False
+        self.parent_journey_id = None
+        self.linked_journey_id = None
+
+        async def parent_on_selected_handler(_ctx: p.EngineContext, match: p.JourneyMatch) -> None:
+            self.parent_on_selected_called = True
+            self.parent_journey_id = match.journey_id
+
+        async def linked_on_selected_handler(_ctx: p.EngineContext, match: p.JourneyMatch) -> None:
+            self.linked_on_selected_called = True
+            self.linked_journey_id = match.journey_id
+
+        self.agent = await server.create_agent(
+            name="Linked Journey Agent",
+            description="Agent for testing linked journey on_selected handlers",
+            composition_mode=p.CompositionMode.STRICT,
+        )
+
+        # Create canned responses for deterministic testing
+        self.ask_room_response = await server.create_canned_response(
+            template="Would you like the red room or the blue room?"
+        )
+        self.ask_name_response = await server.create_canned_response(
+            template="Please provide your name for verification."
+        )
+
+        # Create a linked journey (will be activated via link, not via conditions)
+        self.linked_journey = await self.agent.create_journey(
+            title="User Validation",
+            description="Validate the user",
+            triggers=[],  # No conditions - activated only via link
+            on_selected=linked_on_selected_handler,
+        )
+
+        # Add a state to the linked journey
+        await self.linked_journey.initial_state.transition_to(
+            chat_state="Ask the customer for their name",
+            canned_responses=[self.ask_name_response],
+        )
+
+        # Create the parent journey that links to the validation journey
+        self.parent_journey = await self.agent.create_journey(
+            title="Hotel Booking",
+            description="Book a hotel room",
+            triggers=["Customer wants to book a hotel"],
+            on_selected=parent_on_selected_handler,
+        )
+
+        # First state: ask for room type
+        self.room_transition = await self.parent_journey.initial_state.transition_to(
+            chat_state="Ask the customer which room they want",
+            canned_responses=[self.ask_room_response],
+        )
+
+        # Link to the validation journey
+        await self.room_transition.target.transition_to(
+            journey=self.linked_journey,
+        )
+
+    async def run(self, ctx: Context) -> None:
+        # First message activates parent journey
+        await ctx.send_and_receive_message(
+            customer_message="I want to book a hotel room",
+            recipient=self.agent,
+            reuse_session=True,
+        )
+
+        assert self.parent_on_selected_called, (
+            "Parent journey on_selected handler should have been called"
+        )
+        assert self.parent_journey_id == self.parent_journey.id, (
+            f"Expected parent journey ID {self.parent_journey.id}, got {self.parent_journey_id}"
+        )
+
+        # Second message triggers transition to linked journey
+        await ctx.send_and_receive_message(
+            customer_message="I want the blue room",
+            recipient=self.agent,
+            reuse_session=True,
+        )
+
+        assert self.linked_on_selected_called, (
+            "Linked journey on_selected handler should have been called"
+        )
+        assert self.linked_journey_id == self.linked_journey.id, (
+            f"Expected linked journey ID {self.linked_journey.id}, got {self.linked_journey_id}"
+        )
+
+
+class Test_that_journey_state_retriever_runs_when_state_is_active(SDKTest):
+    """Test that a retriever attached to a journey state runs only when that state is active."""
+
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Journey State Retriever Agent",
+            description="Agent for testing journey state retrievers",
+        )
+
+        journey = await self.agent.create_journey(
+            title="Order Journey",
+            description="A journey about ordering products",
+            triggers=["the customer wants to place an order"],
+        )
+
+        # Create a state transition and attach retriever to the target state
+        transition = await journey.initial_state.transition_to(
+            chat_state="Help the customer complete their order",
+        )
+
+        async def state_retriever(ctx: p.RetrieverContext) -> p.RetrieverResult:
+            return p.RetrieverResult(data="The special discount code is SAVE42")
+
+        await transition.target.attach_retriever(state_retriever)
+
+    async def run(self, ctx: Context) -> None:
+        # Send a message that triggers the journey and transitions to the state with retriever
+        response = await ctx.send_and_receive_message(
+            customer_message="I want to place an order",
+            recipient=self.agent,
+        )
+        # The retriever data should be available in the response
+        assert "SAVE42" in response, f"Expected 'SAVE42' in response, got: {response}"
+
+
+class Test_that_journey_state_retriever_does_not_run_when_state_is_inactive(SDKTest):
+    """Test that a retriever attached to a journey state does not run when that state is not active."""
+
+    async def setup(self, server: p.Server) -> None:
+        self.retriever_called = False
+
+        self.agent = await server.create_agent(
+            name="Journey State Retriever Agent",
+            description="Agent for testing journey state retrievers",
+        )
+
+        journey = await self.agent.create_journey(
+            title="Order Journey",
+            description="A journey about ordering products",
+            triggers=["the customer wants to place an order"],
+        )
+
+        # Create a state transition and attach retriever to the target state
+        transition = await journey.initial_state.transition_to(
+            chat_state="Help the customer complete their order",
+        )
+
+        async def state_retriever(ctx: p.RetrieverContext) -> p.RetrieverResult:
+            self.retriever_called = True
+            return p.RetrieverResult(data="The special discount code is SAVE42")
+
+        await transition.target.attach_retriever(state_retriever)
+
+    async def run(self, ctx: Context) -> None:
+        # Send a message that does NOT trigger the journey
+        await ctx.send_and_receive_message(
+            customer_message="What is the weather like today?",
+            recipient=self.agent,
+        )
+        assert not self.retriever_called, (
+            "Retriever should not be called when journey state is inactive"
+        )
+
+
+class Test_that_tool_state_runs_again_after_missing_data(SDKTest):
+    STARTUP_TIMEOUT = 500
+
+    async def setup(self, server: p.Server) -> None:
+        @tool
+        def find_user_id_by_name(
+            context: ToolContext, first_name: str, last_name: str
+        ) -> ToolResult:
+            return ToolResult(data={"user_id": f"{first_name.lower()}_{last_name.lower()}_8831"})
+
+        @tool
+        def find_user_id_by_email(context: ToolContext, email: str) -> ToolResult:
+            return ToolResult(data={"user_id": f"{email}_8831"})
+
+        self.agent = await server.create_agent(
+            name="Retail Agent",
+            description="You are a customer-service agent for an online retail store.",
+            max_engine_iterations=3,
+        )
+
+        self.journey = await self.agent.create_journey(
+            title="Meet & Greet",
+            description=(
+                "Start the conversation with a friendly greeting and ask for their "
+                "full name or email address to look up their account first."
+            ),
+            triggers=[await self.agent.create_observation(matcher=p.MATCH_ALWAYS)],
+        )
+
+        t0 = await self.journey.initial_state.transition_to(
+            chat_state=(
+                "Greet the customer and ask for their full name or email address "
+                "to look up their account"
+            ),
+        )
+        t1 = await t0.target.transition_to(
+            condition="The customer provides their full name",
+            tool_instruction="Look up the customer's account using the provided information",
+            tool_state=find_user_id_by_name,
+        )
+        t2 = await t0.target.transition_to(
+            condition="The customer provides their email",
+            tool_instruction="Look up the customer's account using the provided information",
+            tool_state=find_user_id_by_email,
+        )
+        t3_via_t1 = await t1.target.transition_to(
+            condition="The customer's account is successfully found using the provided information",
+            chat_state="Tell them their exact user ID for reference, and offer them a Pepsi",
+        )
+        _ = await t2.target.transition_to(
+            condition="The customer's account is successfully found using the provided information",
+            state=t3_via_t1.target,
+        )
+
+    async def run(self, ctx: Context) -> None:
+        first_response = await ctx.send_and_receive_message(
+            "I’d like to know exactly how many t-shirt options are available in your online store right now.",
+            recipient=self.agent,
+            reuse_session=True,
+        )
+
+        assert await nlp_test(first_response, "It asks for their full name or email address")
+
+        second_response = await ctx.send_and_receive_message(
+            "My name is John",
+            recipient=self.agent,
+            reuse_session=True,
+        )
+
+        assert await nlp_test(
+            second_response,
+            "It asks for the last name",
+        )
+
+        third_response = await ctx.send_and_receive_message(
+            "Smith",
+            recipient=self.agent,
+            reuse_session=True,
+        )
+
+        assert "john_smith_8831" in third_response.lower()
+
+
+class Test_that_active_journey_description_influences_canned_response_draft(SDKTest):
+    async def setup(self, server: p.Server) -> None:
+        self.agent = await server.create_agent(
+            name="Banana Agent",
+            description="Agent for testing journey description rendering in draft prompt",
+        )
+
+        self.journey = await self.agent.create_journey(
+            title="Banana Mention Journey",
+            description="When you reply to the customer, always include the word 'banana' somewhere in your response.",
+            triggers=["Customer asks anything at all"],
+        )
+
+    async def run(self, ctx: Context) -> None:
+        answer = await ctx.send_and_receive_message(
+            customer_message="Hello, what's the weather like today?",
+            recipient=self.agent,
+        )
+
+        assert await nlp_test(answer, "It mentions a banana")

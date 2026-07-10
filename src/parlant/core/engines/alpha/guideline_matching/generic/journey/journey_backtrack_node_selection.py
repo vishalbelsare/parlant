@@ -100,7 +100,7 @@ class JourneyNodeSelectionShot(Shot):
     journey_nodes: dict[str, _JourneyNode] | None
     previous_path: Sequence[str | None]
     expected_result: JourneyBacktrackNodeSelectionSchema
-    conditions: Sequence[str]
+    triggers: Sequence[str]
 
 
 def build_node_wrappers(guidelines: Sequence[Guideline]) -> dict[str, _JourneyNode]:
@@ -242,7 +242,7 @@ def get_journey_transition_map_text(
     nodes: dict[str, _JourneyNode],
     journey_title: str,
     journey_description: str = "",
-    journey_conditions: Sequence[Guideline] = [],
+    journey_triggers: Sequence[Guideline] = [],
     previous_path: Sequence[str | None] = [],
     print_customer_action_description: bool = False,
     to_prune: bool = False,
@@ -310,11 +310,11 @@ def get_journey_transition_map_text(
         journey_description_str = f"\nJourney Description: {journey_description}"
     else:
         journey_description_str = ""
-    if journey_conditions:
-        journey_conditions_str = " OR ".join(f'"{g.content.condition}"' for g in journey_conditions)
-        journey_conditions_str = f"\nJourney activation condition: {journey_conditions_str}"
+    if journey_triggers:
+        journey_triggers_str = " OR ".join(f'"{g.content.condition}"' for g in journey_triggers)
+        journey_triggers_str = f"\nJourney activation condition: {journey_triggers_str}"
     else:
-        journey_conditions_str = ""
+        journey_triggers_str = ""
 
     last_executed_node_id = next(
         (node_id for node_id in reversed(previous_path) if node_id is not None), None
@@ -390,7 +390,7 @@ TRANSITIONS:
 """
     return f"""
 Journey: {journey_title}
-{journey_conditions_str}{journey_description_str}
+{journey_triggers_str}{journey_description_str}
 
 Steps:
 {nodes_str}
@@ -408,7 +408,7 @@ class JourneyBacktrackNodeSelection:
         context: GuidelineMatchingContext,
         node_guidelines: Sequence[Guideline] = [],
         journey_path: Sequence[str | None] = [],
-        journey_conditions: Sequence[Guideline] = [],
+        journey_triggers: Sequence[Guideline] = [],
     ) -> None:
         self._logger = logger
 
@@ -421,7 +421,7 @@ class JourneyBacktrackNodeSelection:
         self._context = context
         self._examined_journey = examined_journey
         self._previous_path: Sequence[str | None] = journey_path
-        self._journey_conditions = journey_conditions
+        self._journey_triggers = journey_triggers
 
     def _get_root(self, node_guidelines: Sequence[Guideline]) -> Guideline:
         def _get_guideline_node_index(guideline: Guideline) -> str:
@@ -450,7 +450,9 @@ class JourneyBacktrackNodeSelection:
                     prompt=prompt,
                     hints={"temperature": generation_attempt_temperatures[generation_attempt]},
                 )
-                self._logger.trace(f"Completion:\n{inference.content.model_dump_json(indent=2)}")
+                self._logger.trace(
+                    f"Completion: {self._examined_journey.title}\n{inference.content.model_dump_json(indent=2)}"
+                )
 
                 journey_path = self._get_verified_node_advancement(inference.content)
 
@@ -473,6 +475,16 @@ class JourneyBacktrackNodeSelection:
                             .incoming_edges[0]
                             .target_guideline
                         )
+
+                if matched_guideline:
+                    self._logger.debug(
+                        f"Journey '{self._examined_journey.title}': backtracked to node {inference.content.next_step}"
+                    )
+                else:
+                    self._logger.debug(
+                        f"Journey '{self._examined_journey.title}': exited after backtrack"
+                    )
+
                 return GuidelineMatchingBatchResult(
                     matches=[
                         GuidelineMatch(
@@ -501,7 +513,7 @@ class JourneyBacktrackNodeSelection:
                 )
             except Exception as exc:
                 self._logger.warning(
-                    f"Attempt {generation_attempt} failed: {traceback.format_exception(exc)}"
+                    f"Attempt {generation_attempt} failed: {self._examined_journey.title}\n{traceback.format_exception(exc)}"
                 )
 
                 last_generation_exception = exc
@@ -546,7 +558,7 @@ class JourneyBacktrackNodeSelection:
                 shot.journey_nodes,
                 previous_path=shot.previous_path,
                 journey_title=shot.journey_title,
-                journey_conditions=[
+                journey_triggers=[
                     Guideline(
                         id=GuidelineId(f"c-{i}"),
                         creation_utc=datetime.now(timezone.utc),
@@ -559,7 +571,7 @@ class JourneyBacktrackNodeSelection:
                         criticality=Criticality.HIGH,
                         tags=[],
                     )
-                    for i, c in enumerate(shot.conditions)
+                    for i, c in enumerate(shot.triggers)
                 ],
                 print_customer_action_description=True,
             )
@@ -608,11 +620,11 @@ class JourneyBacktrackNodeSelection:
         ):  # Warnings related to backtracking to illegal step
             if journey_path[0] != response.backtracking_target_step:
                 self._logger.warning(
-                    f"WARNING: Illegal journey path returned by journey step selection. Reported that it should return to step {response.backtracking_target_step}, but step advancement began at {journey_path[0]}"
+                    f"WARNING: Illegal journey path returned by journey step selection for journey {self._examined_journey.title}. Reported that it should return to step {response.backtracking_target_step}, but step advancement began at {journey_path[0]}"
                 )
             if response.backtracking_target_step not in self._previous_path:
                 self._logger.warning(
-                    f"WARNING: Illegal journey path returned by journey step selection. backtracked to {response.backtracking_target_step}, which was never previously visited! Previously visited step IDs: {self._previous_path}"
+                    f"WARNING: Illegal journey path returned by journey step selection for journey {self._examined_journey.title}. Backtracked to {response.backtracking_target_step}, which was never previously visited! Previously visited step IDs: {self._previous_path}"
                 )
         elif (
             self._previous_path
@@ -621,7 +633,7 @@ class JourneyBacktrackNodeSelection:
             and journey_path[0] != self._previous_path[-1]
         ):  # Illegal first step returned
             self._logger.warning(
-                f"WARNING: Illegal journey path returned by journey step selection. Expected path from {self._previous_path} to {journey_path}"
+                f"WARNING: Illegal journey path returned by journey step selection for journey {self._examined_journey.title}. Expected path from {self._previous_path} to {journey_path}"
             )
             journey_path.insert(0, self._previous_path[-1])  # Try to recover
 
@@ -630,7 +642,7 @@ class JourneyBacktrackNodeSelection:
         for i in range(1, len(journey_path)):  # Verify all transitions are legal
             if journey_path[i - 1] not in self._node_wrappers:
                 self._logger.warning(
-                    f"WARNING: Illegal journey path returned by journey step selection. Illegal step returned: {journey_path[i - 1]}. Full path: : {journey_path}"
+                    f"WARNING: Illegal journey path returned by journey step selection for journey {self._examined_journey.title}. Illegal step returned: {journey_path[i - 1]}. Full path: : {journey_path}"
                 )
                 indexes_to_delete.append(i)
             elif journey_path[i] not in [
@@ -638,7 +650,7 @@ class JourneyBacktrackNodeSelection:
                 for e in self._node_wrappers[cast(str, journey_path[i - 1])].outgoing_edges
             ]:
                 self._logger.warning(
-                    f"WARNING: Illegal transition in journey path returned by journey step selection - from {journey_path[i - 1]} to {journey_path[i]}. Full path: : {journey_path}"
+                    f"WARNING: Illegal transition in journey path returned by journey step selection for journey {self._examined_journey.title} - from {journey_path[i - 1]} to {journey_path[i]}. Full path: : {journey_path}"
                 )
                 # Sometimes, the LLM returns a path that would've been legal if it were not for an out-of-place step. This deletes such steps.
                 if i + 1 < len(journey_path) and journey_path[i + 1] in [
@@ -679,7 +691,13 @@ class JourneyBacktrackNodeSelection:
         self,
         shots: Sequence[JourneyNodeSelectionShot],
     ) -> PromptBuilder:
-        builder = PromptBuilder(on_build=lambda prompt: self._logger.trace(f"Prompt:\n{prompt}"))
+        builder = PromptBuilder(
+            on_build=lambda prompt: self._logger.trace(
+                f"Prompt: {self._examined_journey.title}\n{prompt}"
+            )
+        )
+
+        builder.add_agent_identity(self._context.agent)
 
         builder.add_section(
             name="journey-step-selection-general-instructions",
@@ -772,6 +790,8 @@ Example section is over. The following is the real data you need to use for your
                 "shots": shots,
             },
         )
+
+        builder.add_customer_identity(self._context.customer, self._context.session)
         builder.add_context_variables(self._context.context_variables)
         builder.add_glossary(self._context.terms)
         builder.add_capabilities_for_guideline_matching(self._context.capabilities)
@@ -788,7 +808,7 @@ Example section is over. The following is the real data you need to use for your
                 nodes=self._node_wrappers,
                 journey_title=self._examined_journey.title,
                 previous_path=self._previous_path,
-                journey_conditions=self._journey_conditions,
+                journey_triggers=self._journey_triggers,
                 journey_description=self._examined_journey.description,
                 print_customer_action_description=True,
                 to_prune=True,
@@ -1737,7 +1757,7 @@ _baseline_shots: Sequence[JourneyNodeSelectionShot] = [
         journey_nodes=example_1_journey_nodes,
         expected_result=example_1_expected,
         previous_path=["1"],
-        conditions=["the customer is interested in a vacation"],
+        triggers=["the customer is interested in a vacation"],
     ),
     JourneyNodeSelectionShot(
         description="Example 2 - Multiple Step Advancement Stopped by Tool Calling Step",
@@ -1746,7 +1766,7 @@ _baseline_shots: Sequence[JourneyNodeSelectionShot] = [
         journey_nodes=book_taxi_shot_journey_nodes,
         expected_result=example_2_expected,
         previous_path=["1", "2"],
-        conditions=[],
+        triggers=[],
     ),
     JourneyNodeSelectionShot(
         description="Example 3 - Multiple Step Advancement Stopped by Lacking Info",
@@ -1755,7 +1775,7 @@ _baseline_shots: Sequence[JourneyNodeSelectionShot] = [
         journey_nodes=None,
         expected_result=example_3_expected,
         previous_path=["1"],
-        conditions=[],
+        triggers=[],
     ),
     JourneyNodeSelectionShot(
         description="Example 4 - Backtracking Due to Changed Customer Decision",
@@ -1764,7 +1784,7 @@ _baseline_shots: Sequence[JourneyNodeSelectionShot] = [
         journey_nodes=None,
         expected_result=example_4_expected,
         previous_path=["1", "2", "4", "2", "3", "5"],
-        conditions=[],
+        triggers=[],
     ),
     JourneyNodeSelectionShot(
         description="Example 5 - Remaining in journey unless explicitly told otherwise",
@@ -1773,7 +1793,7 @@ _baseline_shots: Sequence[JourneyNodeSelectionShot] = [
         journey_nodes=random_actions_journey_nodes,
         expected_result=example_5_expected,
         previous_path=["1"],
-        conditions=["customer wants to book a taxi"],
+        triggers=["customer wants to book a taxi"],
     ),
     JourneyNodeSelectionShot(
         description="Example 6 - Backtracking and fast forwarding to Completion",
@@ -1782,7 +1802,7 @@ _baseline_shots: Sequence[JourneyNodeSelectionShot] = [
         journey_nodes=loan_journey_nodes,
         expected_result=example_6_expected,
         previous_path=["1", "2", "3", "5", "7"],
-        conditions=["customer wants a loan"],
+        triggers=["customer wants a loan"],
     ),
     JourneyNodeSelectionShot(
         description="Example 7 - fast forwarding due to information provided earlier in the conversation",
@@ -1791,7 +1811,7 @@ _baseline_shots: Sequence[JourneyNodeSelectionShot] = [
         journey_nodes=loan_journey_nodes,
         expected_result=example_7_expected,
         previous_path=["1", "2"],
-        conditions=["customer wants a loan"],
+        triggers=["customer wants a loan"],
     ),
 ]
 

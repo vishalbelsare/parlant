@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,11 +15,11 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Awaitable, Callable, Optional, Sequence, TypeAlias, Union
+from typing import Any, Awaitable, Callable, Optional, Sequence, TypeAlias
 
 from parlant.core.engines.alpha.engine_context import EngineContext
-from parlant.core.engines.alpha.engine_context import LoadedContext  # type: ignore
 from parlant.core.guidelines import GuidelineId
+from parlant.core.journeys import JourneyId
 from parlant.core.engines.alpha.guideline_matching.guideline_match import GuidelineMatch
 
 
@@ -41,10 +41,8 @@ class EngineHookResult(Enum):
     """
 
 
-EngineHook: TypeAlias = Union[
-    Callable[[EngineContext, Any, Optional[Exception]], Awaitable[EngineHookResult]],
-    # TODO: Remove this once LoadedContext is removed
-    Callable[[LoadedContext, Any, Optional[Exception]], Awaitable[EngineHookResult]],  # type: ignore
+EngineHook: TypeAlias = Callable[
+    [EngineContext, Any, Optional[Exception]], Awaitable[EngineHookResult]
 ]
 """A callable that takes a EngineContext and an optional Exception, and returns an EngineHookResult."""
 
@@ -87,21 +85,28 @@ class EngineHooks:
     on_message_generated: list[EngineHook] = field(default_factory=list)
     """Called right after a message was generated (but not yet emitted)"""
 
-    on_message_emitted: list[EngineHook] = field(default_factory=list)
-    """Called right after a single message was emitted into the session"""
-
     on_messages_emitted: list[EngineHook] = field(default_factory=list)
     """Called right after all messages were emitted into the session"""
 
-    on_guideline_match_handlers: dict[
+    on_guideline_selected_handlers: dict[
         GuidelineId, list[Callable[[EngineContext, GuidelineMatch], Awaitable[None]]]
     ] = field(default_factory=lambda: defaultdict(list))
-    """Map from GuidelineId to list of handlers called when that guideline is resolved"""
+    """Map from GuidelineId to list of handlers called when that guideline is selected for message generation"""
 
     on_guideline_message_handlers: dict[
         GuidelineId, list[Callable[[EngineContext, GuidelineMatch], Awaitable[None]]]
     ] = field(default_factory=lambda: defaultdict(list))
     """Map from GuidelineId to list of handlers called when messages are generated for that guideline"""
+
+    on_journey_selected_handlers: dict[
+        JourneyId, list[Callable[[EngineContext], Awaitable[None]]]
+    ] = field(default_factory=lambda: defaultdict(list))
+    """Map from JourneyId to list of handlers called when that journey is selected for message generation"""
+
+    on_journey_message_handlers: dict[
+        JourneyId, list[Callable[[EngineContext], Awaitable[None]]]
+    ] = field(default_factory=lambda: defaultdict(list))
+    """Map from JourneyId to list of handlers called when messages are generated for that journey"""
 
     async def call_on_error(self, context: EngineContext, exception: Exception) -> bool:
         return await self.call_hooks(self.on_error, context, None, exception)
@@ -150,8 +155,7 @@ class EngineHooks:
         exc: Optional[Exception] = None,
     ) -> bool:
         for callable in hooks:
-            # TODO: Remove type: ignore once LoadedContext is removed
-            match await callable(context, payload, exc):  # type: ignore
+            match await callable(context, payload, exc):
                 case EngineHookResult.CALL_NEXT:
                     continue
                 case EngineHookResult.RESOLVE:

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Sequence, Set
 
 from parlant.core.agents import CompositionMode
 from parlant.core.guidelines import Guideline, GuidelineId, GuidelineStore
@@ -23,7 +23,7 @@ class JourneyGraph:
 
 
 @dataclass(frozen=True)
-class JourneyConditionUpdateParams:
+class JourneyTriggerUpdateParams:
     add: Sequence[GuidelineId] | None
     remove: Sequence[GuidelineId] | None
 
@@ -32,6 +32,18 @@ class JourneyConditionUpdateParams:
 class JourneyTagUpdateParams:
     add: Sequence[TagId] | None = None
     remove: Sequence[TagId] | None = None
+
+
+@dataclass(frozen=True)
+class JourneyLabelsUpdateParams:
+    upsert: Set[str] | None = None
+    remove: Set[str] | None = None
+
+
+@dataclass(frozen=True)
+class JourneyNodeLabelsUpdateParams:
+    upsert: Set[str] | None = None
+    remove: Set[str] | None = None
 
 
 class JourneyModule:
@@ -49,33 +61,37 @@ class JourneyModule:
         self,
         title: str,
         description: str,
-        conditions: Sequence[str],
+        triggers: Sequence[str],
         tags: Sequence[TagId] | None,
         id: JourneyId | None = None,
         composition_mode: CompositionMode | None = None,
+        labels: Set[str] | None = None,
+        priority: int = 0,
     ) -> tuple[Journey, Sequence[Guideline]]:
         guidelines = [
             await self._guideline_store.create_guideline(
-                condition=condition,
+                condition=trigger,
                 action=None,
                 tags=[],
             )
-            for condition in conditions
+            for trigger in triggers
         ]
 
         journey = await self._journey_store.create_journey(
             title=title,
             description=description,
-            conditions=[g.id for g in guidelines],
+            triggers=[g.id for g in guidelines],
             tags=tags,
             id=id,
             composition_mode=composition_mode,
+            labels=labels,
+            priority=priority,
         )
 
         for guideline in guidelines:
             await self._guideline_store.upsert_tag(
                 guideline_id=guideline.id,
-                tag_id=Tag.for_journey_id(journey.id),
+                tag_id=Tag.for_journey_id(journey.id).id,
             )
 
         return journey, guidelines
@@ -102,9 +118,11 @@ class JourneyModule:
         journey_id: JourneyId,
         title: str | None,
         description: str | None,
-        conditions: JourneyConditionUpdateParams | None,
+        triggers: JourneyTriggerUpdateParams | None,
         tags: JourneyTagUpdateParams | None,
         composition_mode: CompositionMode | None = None,
+        labels: JourneyLabelsUpdateParams | None = None,
+        priority: int | None = None,
     ) -> Journey:
         journey = await self._journey_store.read_journey(journey_id=journey_id)
 
@@ -115,6 +133,8 @@ class JourneyModule:
             update_params["description"] = description
         if composition_mode is not None:
             update_params["composition_mode"] = composition_mode
+        if priority is not None:
+            update_params["priority"] = priority
 
         if update_params:
             journey = await self._journey_store.update_journey(
@@ -122,36 +142,36 @@ class JourneyModule:
                 params=update_params,
             )
 
-        if conditions:
-            if conditions.add:
-                for condition in conditions.add:
-                    await self._journey_store.add_condition(
+        if triggers:
+            if triggers.add:
+                for trigger in triggers.add:
+                    await self._journey_store.add_trigger(
                         journey_id=journey_id,
-                        condition=condition,
+                        trigger=trigger,
                     )
 
-                    guideline = await self._guideline_store.read_guideline(guideline_id=condition)
+                    guideline = await self._guideline_store.read_guideline(guideline_id=trigger)
 
                     await self._guideline_store.upsert_tag(
-                        guideline_id=condition,
-                        tag_id=Tag.for_journey_id(journey_id),
+                        guideline_id=trigger,
+                        tag_id=Tag.for_journey_id(journey_id).id,
                     )
 
-            if conditions.remove:
-                for condition in conditions.remove:
-                    await self._journey_store.remove_condition(
+            if triggers.remove:
+                for trigger in triggers.remove:
+                    await self._journey_store.remove_trigger(
                         journey_id=journey_id,
-                        condition=condition,
+                        trigger=trigger,
                     )
 
-                    guideline = await self._guideline_store.read_guideline(guideline_id=condition)
+                    guideline = await self._guideline_store.read_guideline(guideline_id=trigger)
 
-                    if guideline.tags == [Tag.for_journey_id(journey_id)]:
-                        await self._guideline_store.delete_guideline(guideline_id=condition)
+                    if guideline.tags == [Tag.for_journey_id(journey_id).id]:
+                        await self._guideline_store.delete_guideline(guideline_id=trigger)
                     else:
                         await self._guideline_store.remove_tag(
-                            guideline_id=condition,
-                            tag_id=Tag.for_journey_id(journey_id),
+                            guideline_id=trigger,
+                            tag_id=Tag.for_journey_id(journey_id).id,
                         )
 
         if tags:
@@ -163,6 +183,19 @@ class JourneyModule:
                 for tag in tags.remove:
                     await self._journey_store.remove_tag(journey_id=journey_id, tag_id=tag)
 
+        if labels:
+            if labels.upsert:
+                await self._journey_store.upsert_journey_labels(
+                    journey_id=journey_id,
+                    labels=labels.upsert,
+                )
+
+            if labels.remove:
+                await self._journey_store.remove_journey_labels(
+                    journey_id=journey_id,
+                    labels=labels.remove,
+                )
+
         journey = await self._journey_store.read_journey(journey_id=journey_id)
 
         return journey
@@ -172,16 +205,16 @@ class JourneyModule:
 
         await self._journey_store.delete_journey(journey_id=journey_id)
 
-        for condition in journey.conditions:
-            if not await self._journey_store.list_journeys(condition=condition):
-                await self._guideline_store.delete_guideline(guideline_id=condition)
+        for trigger in journey.triggers:
+            if not await self._journey_store.list_journeys(trigger=trigger):
+                await self._guideline_store.delete_guideline(guideline_id=trigger)
             else:
-                guideline = await self._guideline_store.read_guideline(guideline_id=condition)
+                guideline = await self._guideline_store.read_guideline(guideline_id=trigger)
 
-                if guideline.tags == [Tag.for_journey_id(journey_id)]:
-                    await self._guideline_store.delete_guideline(guideline_id=condition)
+                if guideline.tags == [Tag.for_journey_id(journey_id).id]:
+                    await self._guideline_store.delete_guideline(guideline_id=trigger)
                 else:
                     await self._guideline_store.remove_tag(
-                        guideline_id=condition,
-                        tag_id=Tag.for_journey_id(journey_id),
+                        guideline_id=trigger,
+                        tag_id=Tag.for_journey_id(journey_id).id,
                     )

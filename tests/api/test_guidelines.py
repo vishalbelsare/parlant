@@ -1,4 +1,4 @@
-# Copyright 2025 Emcie Co Ltd.
+# Copyright 2026 Emcie Co Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ async def create_guidelines_and_create_relationships_between_them(
     for guideline in guidelines:
         _ = await container[GuidelineStore].upsert_tag(
             guideline_id=guideline.id,
-            tag_id=Tag.for_agent_id(agent_id),
+            tag_id=Tag.for_agent_id(agent_id).id,
         )
 
     for source, target in zip(guidelines, guidelines[1:]):
@@ -85,6 +85,48 @@ async def test_that_a_guideline_can_be_created(
     assert guideline["enabled"] is True
     assert guideline["tags"] == []
     assert guideline["metadata"] == {"key1": "value1", "key2": "value2"}
+
+
+async def test_that_a_guideline_can_be_created_with_a_title(
+    async_client: httpx.AsyncClient,
+) -> None:
+    response = await async_client.post(
+        "/guidelines",
+        json={
+            "condition": "the customer asks about pricing",
+            "action": "provide current pricing information",
+            "title": "Pricing inquiries",
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+
+    guideline = response.json()
+    assert guideline["title"] == "Pricing inquiries"
+
+
+async def test_that_a_guideline_title_can_be_updated(
+    async_client: httpx.AsyncClient,
+    container: Container,
+) -> None:
+    guideline_store = container[GuidelineStore]
+
+    guideline = await guideline_store.create_guideline(
+        condition="the customer asks about the weather",
+        action="provide the current weather update",
+        title="Old title",
+    )
+
+    response = await async_client.patch(
+        f"/guidelines/{guideline.id}",
+        json={"title": "Weather inquiries"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    updated_guideline = response.json()["guideline"]
+
+    assert updated_guideline["id"] == guideline.id
+    assert updated_guideline["title"] == "Weather inquiries"
 
 
 async def test_that_a_guideline_can_be_created_without_an_action(
@@ -171,14 +213,14 @@ async def test_that_a_guideline_can_be_created_with_tags(
     journey_store = container[JourneyStore]
 
     agent = await agent_store.create_agent("Test Agent")
-    agent_tag = Tag.for_agent_id(agent.id)
+    agent_tag = Tag.for_agent_id(agent.id).id
 
     journey = await journey_store.create_journey(
         title="Customer Support Journey",
         description="A journey for customer support interactions.",
-        conditions=[],
+        triggers=[],
     )
-    journey_tag = Tag.for_journey_id(journey.id)
+    journey_tag = Tag.for_journey_id(journey.id).id
 
     tag_1 = await tag_store.create_tag(name="pricing")
     tag_2 = await tag_store.create_tag(name="sales")
@@ -445,7 +487,7 @@ async def test_that_an_agent_tag_can_be_added_to_guideline(
     agent_store = container[AgentStore]
 
     agent = await agent_store.create_agent("test_agent")
-    agent_tag = Tag.for_agent_id(agent.id)
+    agent_tag = Tag.for_agent_id(agent.id).id
 
     guideline = await guideline_store.create_guideline(
         condition="the customer asks about the weather",
@@ -478,9 +520,9 @@ async def test_that_a_journey_tag_can_be_added_to_guideline(
     journey = await journey_store.create_journey(
         title="test_journey",
         description="test_description",
-        conditions=[],
+        triggers=[],
     )
-    journey_tag = Tag.for_journey_id(journey.id)
+    journey_tag = Tag.for_journey_id(journey.id).id
 
     guideline = await guideline_store.create_guideline(
         condition="the customer asks about the weather",
@@ -712,14 +754,14 @@ async def test_that_condition_association_is_deleted_when_a_guideline_is_deleted
     journey = await journey_store.create_journey(
         title="test_journey",
         description="test_description",
-        conditions=[guideline.id],
+        triggers=[guideline.id],
     )
 
     response = await async_client.delete(f"/guidelines/{guideline.id}")
     assert response.status_code == status.HTTP_204_NO_CONTENT
 
     updated_journey = await journey_store.read_journey(journey.id)
-    assert updated_journey.conditions == []
+    assert updated_journey.triggers == []
 
 
 async def test_that_guideline_relationships_can_be_read(
@@ -1002,3 +1044,119 @@ async def test_that_guideline_composition_mode_can_be_set_and_updated(
     assert response.status_code == status.HTTP_200_OK
     guideline = response.json()["guideline"]
     assert guideline["composition_mode"] == "strict_canned"
+
+
+###############################################################################
+## Labels Tests
+###############################################################################
+
+
+async def test_that_a_guideline_can_be_created_with_labels(
+    async_client: httpx.AsyncClient,
+) -> None:
+    response = await async_client.post(
+        "/guidelines",
+        json={
+            "condition": "the customer asks about pricing",
+            "action": "provide current pricing information",
+            "labels": ["premium", "sales"],
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+
+    guideline = response.json()
+    assert guideline["condition"] == "the customer asks about pricing"
+    assert guideline["action"] == "provide current pricing information"
+    assert set(guideline["labels"]) == {"premium", "sales"}
+
+
+async def test_that_a_guideline_is_created_with_empty_labels_by_default(
+    async_client: httpx.AsyncClient,
+) -> None:
+    response = await async_client.post(
+        "/guidelines",
+        json={
+            "condition": "the customer asks about something",
+            "action": "help them out",
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+
+    guideline = response.json()
+    assert guideline["labels"] == []
+
+
+async def test_that_labels_can_be_added_to_a_guideline(
+    async_client: httpx.AsyncClient,
+    container: Container,
+) -> None:
+    guideline_store = container[GuidelineStore]
+
+    guideline = await guideline_store.create_guideline(
+        condition="the customer wants help",
+        action="help them",
+        labels={"initial"},
+    )
+
+    response = await async_client.patch(
+        f"/guidelines/{guideline.id}",
+        json={"labels": {"upsert": ["new_label", "another_label"]}},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    updated_guideline = response.json()["guideline"]
+
+    assert set(updated_guideline["labels"]) == {"initial", "new_label", "another_label"}
+
+
+async def test_that_labels_can_be_removed_from_a_guideline(
+    async_client: httpx.AsyncClient,
+    container: Container,
+) -> None:
+    guideline_store = container[GuidelineStore]
+
+    guideline = await guideline_store.create_guideline(
+        condition="the customer wants help",
+        action="help them",
+        labels={"label1", "label2", "label3"},
+    )
+
+    response = await async_client.patch(
+        f"/guidelines/{guideline.id}",
+        json={"labels": {"remove": ["label2"]}},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    updated_guideline = response.json()["guideline"]
+
+    assert set(updated_guideline["labels"]) == {"label1", "label3"}
+
+
+async def test_that_labels_can_be_upserted_and_removed_in_same_operation(
+    async_client: httpx.AsyncClient,
+    container: Container,
+) -> None:
+    guideline_store = container[GuidelineStore]
+
+    guideline = await guideline_store.create_guideline(
+        condition="test condition",
+        action="test action",
+        labels={"keep", "remove_me"},
+    )
+
+    response = await async_client.patch(
+        f"/guidelines/{guideline.id}",
+        json={
+            "labels": {
+                "upsert": ["new_label"],
+                "remove": ["remove_me"],
+            }
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    updated_guideline = response.json()["guideline"]
+
+    assert set(updated_guideline["labels"]) == {"keep", "new_label"}
